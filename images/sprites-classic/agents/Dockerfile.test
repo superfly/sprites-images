@@ -1,0 +1,160 @@
+# syntax=docker/dockerfile:1
+
+FROM sprites-classic-agents AS agents
+
+USER sprite
+ENV PATH="/home/sprite/.local/bin:$PATH"
+
+# -- Antigravity
+
+FROM agents AS antigravity
+
+RUN << 'EOF'
+set -e
+
+agy --version < /dev/null
+
+echo "1" > /tmp/status
+EOF
+
+# -- Claude Code
+
+FROM agents AS claude
+
+RUN << 'EOF'
+set -e
+
+claude --version < /dev/null
+
+# Claude can only self-update when its launcher points into the versions
+# directory.
+target=$(readlink "$(which claude)")
+case "$target" in
+"$HOME/.local/share/claude/versions/"*) ;;
+*)
+    echo "error: Claude launcher is outside its versions directory: $target" >&2
+    exit 1
+    ;;
+esac
+
+echo "1" > /tmp/status
+EOF
+
+# -- Codex
+
+FROM agents AS codex
+
+RUN << 'EOF'
+set -e
+
+codex --version < /dev/null
+
+# --version alone does not catch a missing or broken code-mode host.
+"$HOME/.codex/packages/standalone/current/bin/codex-code-mode-host" --help < /dev/null > /dev/null
+
+echo "1" > /tmp/status
+EOF
+
+# -- GitHub Copilot
+
+FROM agents AS copilot
+
+RUN << 'EOF'
+set -e
+
+copilot --version < /dev/null
+
+echo "1" > /tmp/status
+EOF
+
+# -- Cursor
+
+FROM agents AS cursor
+
+RUN << 'EOF'
+set -e
+
+# Grok's installer also creates an agent command. Make sure the final one is
+# Cursor's.
+version="$(cursor-agent --version < /dev/null)"
+test "$(agent --version < /dev/null)" = "$version"
+
+echo "1" > /tmp/status
+EOF
+
+# -- Gemini
+
+FROM agents AS gemini
+
+RUN --mount=type=bind,from=sprites-classic-languages-node,source=/.sprite,target=/.sprite \
+    --mount=type=bind,from=sprites-classic-languages-node,source=/etc/profile.d/languages_env,target=/etc/profile.d/languages_env \
+    << 'EOF'
+set -e
+
+. /etc/profile.d/languages_env
+gemini --version < /dev/null
+
+echo "1" > /tmp/status
+EOF
+
+# -- Grok
+
+FROM agents AS grok
+
+RUN << 'EOF'
+set -e
+
+grok --version < /dev/null
+
+echo "1" > /tmp/status
+EOF
+
+# -- Muse
+
+FROM agents AS muse
+
+RUN << 'EOF'
+set -e
+
+muse --version < /dev/null
+
+echo "1" > /tmp/status
+EOF
+
+# -- Pi
+
+FROM agents AS pi
+
+RUN --mount=type=bind,from=sprites-classic-languages-node,source=/.sprite,target=/.sprite \
+    --mount=type=bind,from=sprites-classic-languages-node,source=/etc/profile.d/languages_env,target=/etc/profile.d/languages_env \
+    << 'EOF'
+set -e
+
+. /etc/profile.d/languages_env
+pi --version < /dev/null
+
+echo "1" > /tmp/status
+EOF
+
+FROM ubuntu-base
+
+RUN --mount=type=bind,from=antigravity,source=/tmp/status,target=/status/antigravity,ro \
+    --mount=type=bind,from=claude,source=/tmp/status,target=/status/claude,ro \
+    --mount=type=bind,from=codex,source=/tmp/status,target=/status/codex,ro \
+    --mount=type=bind,from=copilot,source=/tmp/status,target=/status/copilot,ro \
+    --mount=type=bind,from=cursor,source=/tmp/status,target=/status/cursor,ro \
+    --mount=type=bind,from=gemini,source=/tmp/status,target=/status/gemini,ro \
+    --mount=type=bind,from=grok,source=/tmp/status,target=/status/grok,ro \
+    --mount=type=bind,from=muse,source=/tmp/status,target=/status/muse,ro \
+    --mount=type=bind,from=pi,source=/tmp/status,target=/status/pi,ro \
+    << 'EOF'
+for status in /status/*
+do
+    if test "$(cat "$status")" != "1"
+    then
+        echo "error: $(basename "$status") tests failed" >&2
+        failed=1
+    fi
+done
+exit "${failed:-0}"
+EOF

@@ -1,0 +1,5 @@
+[user]
+    name = Sprite
+    email = noreply@sprites.dev
+[init]
+    defaultBranch = main

@@ -1,0 +1,94 @@
+Python Installation (via pyenv)
+===============================
+
+This installation uses pyenv for managing Python versions.
+
+Installation Location:
+- pyenv: /.sprite/languages/python/pyenv
+- Binaries: /.sprite/bin (shim wrappers)
+- Packages: Within each Python version's site-packages
+
+Default Version: 3.13.7
+
+Using Python:
+-------------
+The default Python version is immediately available:
+  python --version
+  pip --version
+  python -m venv myenv
+  pipenv --version
+  poetry --version
+
+Managing Versions:
+------------------
+Use pyenv directly (shims handle PATH at runtime):
+  pyenv install 3.11.0
+  pyenv global 3.11.0
+  pyenv local 3.10.0
+  pyenv versions
+
+Virtual Environments:
+---------------------
+Using venv (built-in):
+  python -m venv myenv
+  source myenv/bin/activate   # Linux/Mac
+  myenv\Scripts\activate      # Windows
+  deactivate
+
+Using virtualenv:
+  virtualenv myenv
+  source myenv/bin/activate
+
+Using pipenv:
+  pipenv install              # Create Pipfile and virtualenv
+  pipenv shell                # Activate shell
+  pipenv install requests     # Add dependency
+
+Using poetry:
+  poetry new myproject        # Create new project
+  poetry install              # Install dependencies
+  poetry add requests         # Add dependency
+
+Using uv (fast package manager):
+  uv venv                     # Create virtual environment
+  uv pip install requests     # Install packages (10-100x faster than pip)
+  uv pip sync requirements.txt # Sync from requirements file
+  uv init                     # Initialize a new project
+  uv add requests             # Add dependency to project
+  uv run python script.py     # Run script in project environment
+  uvx ruff check .            # Run a tool without installing
+
+Installing Packages:
+--------------------
+Global packages (for current Python version):
+  pip install <package>
+
+In virtual environments:
+  pip install <package>       # After activation
+  pipenv install <package>    # Using pipenv
+  poetry add <package>        # Using poetry
+  uv pip install <package>    # Using uv (fastest)
+
+Common Commands:
+----------------
+python --version            # Check Python version
+pip list                    # List installed packages
+pip freeze                  # List packages with versions
+pyenv-helper list           # List installed Python versions
+pyenv-helper install latest # Install latest stable Python
+
+Environment Variables:
+----------------------
+PYENV_ROOT                  # pyenv installation directory
+PYTHONPATH                  # Additional Python module directories
+PIP_CACHE_DIR               # pip cache location
+VIRTUAL_ENV                 # Current virtual environment
+
+Notes:
+------
+- Each Python version has its own packages
+- Use .python-version files in projects to specify Python version
+- pyenv-virtualenv plugin is installed for virtual environment management
+- Common Python tools pre-installed: setuptools, wheel, virtualenv, pipenv, poetry
+- uv is installed separately and remains available across pyenv versions
+- Shims dynamically set PATH; no shell profile scripts are modified

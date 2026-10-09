@@ -1,0 +1,68 @@
+Ruby Installation (via rbenv)
+=============================
+
+This installation uses rbenv for managing Ruby versions.
+
+Installation Location:
+- rbenv: /.sprite/languages/ruby/rbenv
+- Binaries: /.sprite/bin (shim wrappers)
+- Gems: Within each Ruby version
+
+Default Version: 3.4.6
+
+Using Ruby:
+-----------
+The default Ruby version is immediately available:
+  ruby --version
+  gem --version
+  irb
+  bundle --version
+  rake --version
+
+Managing Versions:
+------------------
+Use rbenv directly (shims handle PATH at runtime):
+  rbenv install 3.2.0
+  rbenv global 3.2.0
+  rbenv local 3.1.0
+  rbenv versions
+
+Installing Gems:
+----------------
+Local gems (in project with Gemfile):
+  bundle install
+  bundle add rails
+
+Global gems (for current Ruby version):
+  gem install rails
+  gem install puma
+
+To install for all versions, switch versions and install:
+  rbenv global 3.3.4 && gem install <gem>
+  rbenv global 3.2.0 && gem install <gem>
+
+Bundler is included by default in modern Ruby versions.
+
+Common Commands:
+----------------
+ruby --version              # Check Ruby version
+gem list                    # List installed gems
+bundle init                 # Create Gemfile
+bundle install              # Install dependencies
+bundle exec <command>       # Run command with bundled gems
+irb                         # Interactive Ruby shell
+rake -T                     # List rake tasks
+
+Environment Variables:
+----------------------
+RBENV_ROOT                  # rbenv installation directory
+GEM_HOME                    # Where gems are installed
+GEM_PATH                    # Gem search path
+BUNDLE_PATH                 # Bundler install location
+
+Notes:
+------
+- Each Ruby version has its own gems
+- Use .ruby-version files in projects to specify Ruby version
+- Shims dynamically set PATH; no shell profile scripts are modified
+- Bundler is the preferred way to manage project dependencies

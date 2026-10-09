@@ -1,0 +1,25 @@
+{
+  "general": {
+    "checkpointing": { "enabled": true },
+    "sessionRetention": { "enabled": true }
+  },
+  "context": {
+    "fileName": "GEMINI.md",
+    "paths": ["./GEMINI.md"],
+    "discoveryMaxDirs": 0
+  },
+  "sandbox": true,
+  "hooks": {
+    "AfterTool": [
+      {
+        "matcher": "^(run_shell_command|write_file|edit_file)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$HOME\"/.sprite-shared/hooks/sprite-env-check.sh --format gemini AfterTool"
+          }
+        ]
+      }
+    ]
+  }
+}

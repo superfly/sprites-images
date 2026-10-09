@@ -1,0 +1,79 @@
+Erlang Installation (via kerl)
+==============================
+
+This installation uses kerl for managing Erlang/OTP versions.
+
+Installation Location:
+- kerl: /.sprite/languages/erlang/kerl
+- Builds: /.sprite/languages/erlang/kerl/builds
+- Installs: /.sprite/languages/erlang/kerl/installs
+- Binaries: /.sprite/bin (symlinked from active version)
+
+Default Version: 28.5
+
+Using Erlang:
+-------------
+The default Erlang version is immediately available:
+  erl                         # Start Erlang shell
+  erlc file.erl               # Compile Erlang file
+  escript script.erl          # Run Erlang script
+  dialyzer                    # Static analysis tool
+
+Managing Versions:
+------------------
+Option 1: Use the helper script (recommended):
+  kerl-helper install 26.2    # Install a new version
+  kerl-helper list            # List installed/available versions
+  kerl-helper activate 26.2   # Switch version & update symlinks
+  kerl-helper update          # Update available releases list
+
+Option 2: Use kerl directly:
+  kerl build 26.2 26.2
+  kerl install 26.2 /.sprite/languages/erlang/kerl/installs/26.2
+  . /.sprite/languages/erlang/kerl/installs/26.2/activate
+
+Common Erlang Commands:
+-----------------------
+Starting the shell:
+  erl                         # Interactive shell
+  erl -name mynode@host       # Named node
+  erl -sname mynode           # Short name node
+
+Compiling:
+  erlc mymodule.erl           # Compile module
+  erlc +debug_info mymod.erl  # With debug info
+  c(mymodule).                # Compile from shell
+
+Running scripts:
+  escript myscript.erl        # Run Erlang script
+  erl -noshell -s module func -s init stop
+
+Shell commands:
+  q().                        # Quit shell
+  c(module).                  # Compile and load
+  l(module).                  # Load module
+  m(module).                  # Module info
+  i().                        # Process info
+  help().                     # Help
+
+Rebar3 (if installed):
+  rebar3 new app myapp        # Create new app
+  rebar3 compile              # Compile project
+  rebar3 shell                # Start shell with deps
+  rebar3 release              # Build release
+
+Environment Variables:
+----------------------
+KERL_BASE_DIR               # kerl base directory
+ERL_AFLAGS                  # Additional flags for erl
+ERLC_OPTS                   # Compiler options
+ERL_LIBS                    # Additional library paths
+
+Notes:
+------
+- Each Erlang version is completely isolated
+- Use kerl-helper to manage versions easily
+- Default version is activated in new shells
+- Activate script modifies PATH and other env vars
+- Documentation is built with installations
+- Common tools: dialyzer, observer, debugger

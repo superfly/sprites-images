@@ -1,0 +1,78 @@
+#!/bin/bash
+# Helper script for kerl operations
+
+KERL_ROOT="/.sprite/languages/erlang/kerl"
+KERL_BUILD_DIR="/.sprite/languages/erlang/kerl/builds"
+KERL_INSTALL_DIR="/.sprite/languages/erlang/kerl/installs"
+KERL_DOWNLOAD_DIR="/.sprite/languages/erlang/kerl/archives"
+LANG_ROOT="/.sprite/languages/erlang"
+
+export KERL_BASE_DIR="$KERL_ROOT"
+export KERL_BUILD_DIR="$KERL_BUILD_DIR"
+export KERL_DOWNLOAD_DIR="$KERL_DOWNLOAD_DIR"
+export KERL_DEFAULT_INSTALL_DIR="$KERL_INSTALL_DIR"
+
+case "$1" in
+    install)
+        version="$2"
+        if [ -z "$version" ]; then
+            echo "Usage: kerl-helper install <version>"
+            echo "Example: kerl-helper install 26.2"
+            exit 1
+        fi
+
+        # Build and install
+        "$KERL_ROOT/kerl" build "$version" "$version"
+        "$KERL_ROOT/kerl" install "$version" "$KERL_INSTALL_DIR/$version"
+
+        echo "Erlang $version installed"
+        echo "To use: kerl-helper activate $version"
+        ;;
+    list)
+        echo "Installed Erlang versions:"
+        "$KERL_ROOT/kerl" list installations
+        echo ""
+        echo "Available releases:"
+        "$KERL_ROOT/kerl" list releases | tail -10
+        echo "(showing last 10 releases, use 'kerl list releases' for full list)"
+        ;;
+    activate)
+        version="$2"
+        if [ -z "$version" ]; then
+            echo "Usage: kerl-helper activate <version>"
+            echo "Example: kerl-helper activate 26.2"
+            exit 1
+        fi
+
+        if [ ! -d "$KERL_INSTALL_DIR/$version" ]; then
+            echo "Error: Erlang $version is not installed"
+            echo "Run: kerl-helper install $version"
+            exit 1
+        fi
+
+        # Point current to selected version
+        ln -sfn "$KERL_INSTALL_DIR/$version" "$LANG_ROOT/current"
+        echo "Erlang $version activated (updated current symlink)"
+        ;;
+    update)
+        echo "Updating kerl releases list..."
+        "$KERL_ROOT/kerl" update releases
+        echo "Done. Use 'kerl-helper list' to see available releases"
+        ;;
+    *)
+        echo "Erlang version manager (kerl) helper"
+        echo ""
+        echo "Usage: kerl-helper <command> [args]"
+        echo ""
+        echo "Commands:"
+        echo "  install <version>  - Build and install an Erlang version"
+        echo "  list              - List installed and available versions"
+        echo "  activate <version> - Switch to a specific version"
+        echo "  update            - Update the list of available releases"
+        echo ""
+        echo "Examples:"
+        echo "  kerl-helper install 26.2"
+        echo "  kerl-helper list"
+        echo "  kerl-helper activate 26.2"
+        ;;
+esac

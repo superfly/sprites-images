@@ -1,0 +1,100 @@
+Elixir Installation (prebuilt binaries)
+=======================================
+
+This installation uses a lightweight manager with a versions/ layout and a current symlink.
+
+Installation Location:
+- Elixir versions: /.sprite/languages/elixir/versions/<ver>-otp-<otp>
+- Current symlink: /.sprite/languages/elixir/current -> versions/<ver>-otp-<otp>
+- Binaries: /.sprite/bin (shims to current/bin)
+- Mix home: /.sprite/languages/elixir/.mix
+- Hex home: /.sprite/languages/elixir/.hex
+
+Default Version: 1.19.2 (OTP 28)
+
+Prerequisites:
+--------------
+Erlang/OTP must be installed! Elixir runs on the Erlang VM.
+Make sure the OTP version matches the Elixir build.
+
+Using Elixir:
+-------------
+The default Elixir version is immediately available:
+  elixir --version            # Check version
+  iex                         # Interactive shell
+  mix new myapp               # Create new project
+  mix compile                 # Compile project
+  mix test                    # Run tests
+
+Managing Versions:
+------------------
+Project-specific versions via .tool-versions (recommended):
+  Create a .tool-versions file in your project root:
+    elixir 1.18.4
+
+  The shim automatically detects this file and uses the specified version.
+  If the version isn't installed, you'll get an error with instructions.
+
+Use the elixir-version helper script:
+  elixir-version install 1.17.3      # Install Elixir 1.17.3
+  elixir-version list                # List installed versions
+  elixir-version use 1.17.3          # Switch default version (sets current symlink)
+  elixir-version current             # Show current default version
+
+Note: The OTP suffix is handled automatically based on your Erlang installation.
+
+Common Mix Commands:
+--------------------
+Project management:
+  mix new myapp               # Create new project
+  mix new myapp --sup         # With supervisor
+  mix phoenix.new webapp      # Phoenix web app (if installed)
+
+Dependencies:
+  mix deps.get                # Fetch dependencies
+  mix deps.update --all       # Update all deps
+  mix deps.tree               # Show dependency tree
+
+Development:
+  mix compile                 # Compile project
+  mix test                    # Run tests
+  mix test --cover            # With coverage
+  mix format                  # Format code
+  mix dialyzer                # Static analysis (if installed)
+  mix docs                    # Generate docs
+
+Running:
+  mix run                     # Run project
+  mix run --no-halt           # Keep running
+  iex -S mix                  # Interactive shell with project
+
+Phoenix (if installed):
+  mix phx.server              # Start Phoenix server
+  mix phx.routes              # Show routes
+  mix ecto.create             # Create database
+  mix ecto.migrate            # Run migrations
+
+Common IEx Commands:
+--------------------
+h Module.function           # Help for function
+r Module                    # Reload module
+c "file.ex"                 # Compile file
+i variable                  # Inspect variable
+v                           # Last result
+v(n)                        # Result n steps back
+:observer.start()           # Start observer GUI (if available)
+
+Environment Variables:
+----------------------
+MIX_ENV                     # Mix environment (dev/test/prod)
+MIX_HOME                    # Mix archives and config
+HEX_HOME                    # Hex packages cache
+ERL_AFLAGS                  # Erlang VM flags
+
+Notes:
+------
+- Shims automatically read .tool-versions to select the right version
+- Falls back to "current" symlink if no .tool-versions found
+- Errors if .tool-versions requests a version that isn't installed
+- Each Elixir version is isolated
+- Hex and rebar are installed globally in MIX_HOME

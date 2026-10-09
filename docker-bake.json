@@ -1,0 +1,16 @@
+{
+  "variable": {
+    "SOURCE_DATE_EPOCH": {
+      "default": "1791331199"
+    },
+    "UBUNTU_RELEASE": {
+      "default": "resolute"
+    },
+    "UBUNTU_SNAPSHOT": {
+      "default": "20261006T235959Z"
+    },
+    "UBUNTU_VERSION": {
+      "default": "20261006"
+    }
+  }
+}

@@ -1,0 +1,223 @@
+# syntax=docker/dockerfile:1
+
+FROM sprites-classic-languages AS languages
+
+# -- nvm + Node.js
+
+FROM languages AS node
+
+RUN << 'EOF'
+set -e
+
+# Verify installation
+/.sprite/bin/node --version
+/.sprite/bin/npm --version
+
+# Show installed versions
+export NVM_DIR="/.sprite/languages/node/nvm"
+. "$NVM_DIR/nvm.sh"
+nvm list
+
+# Test Node.js
+/.sprite/bin/node -e "console.log('Hello from Node.js ' + process.version + '!')"
+
+echo "1" > /status
+EOF
+
+# -- kerl and Erlang
+
+FROM languages AS erlang
+
+RUN << 'EOF'
+set -e
+
+# Verify installation
+/.sprite/bin/erl -eval 'io:format("Erlang/OTP ~s~n", [erlang:system_info(otp_release)]), halt().' -noshell
+/.sprite/bin/kerl list installations
+
+# Test Erlang
+/.sprite/bin/erl -eval 'io:format("Hello from Erlang/OTP ~s!~n", [erlang:system_info(otp_release)]), halt().' -noshell
+
+echo "1" > /status
+EOF
+
+# -- Elixir
+
+FROM languages AS elixir
+
+RUN << 'EOF'
+set -e
+
+# Verify installation
+/.sprite/bin/elixir --version
+/.sprite/bin/mix --version
+
+# Test Elixir
+/.sprite/bin/elixir -e 'IO.puts("Hello from Elixir #{System.version()}!")'
+
+echo "1" > /status
+EOF
+
+# -- Go
+
+FROM languages AS go
+
+RUN << 'EOF'
+set -e
+
+# Verify installation
+/.sprite/bin/go version
+
+# Test Go
+cat > /tmp/hello.go << 'GO'
+package main
+import (
+    "fmt"
+    "runtime"
+)
+func main() {
+    fmt.Printf("Hello from Go %s!\n", runtime.Version())
+}
+GO
+/.sprite/bin/go run /tmp/hello.go
+
+echo "1" > /status
+EOF
+
+# -- rbenv + Ruby
+
+FROM languages AS ruby
+
+RUN << 'EOF'
+set -e
+
+# Verify installation
+/.sprite/bin/ruby --version
+/.sprite/bin/gem --version
+/.sprite/bin/rbenv --version
+
+# Show installed versions
+rbenv versions
+
+# Test Ruby
+/.sprite/bin/ruby -e "puts 'Hello from Ruby #{RUBY_VERSION}!'"
+
+echo "1" > /status
+EOF
+
+# -- Rust
+
+FROM languages AS rust
+
+RUN << 'EOF'
+set -e
+
+# Verify installation
+/.sprite/bin/rustc --version
+/.sprite/bin/cargo --version
+/.sprite/bin/rustup --version
+
+# Show installed toolchains
+/.sprite/bin/rustup toolchain list
+
+# Test Rust
+echo 'fn main() { println!("Hello from Rust!"); }' > /tmp/hello.rs
+/.sprite/bin/rustc /tmp/hello.rs -o /tmp/hello
+/tmp/hello
+
+echo "1" > /status
+EOF
+
+# -- Bun
+
+FROM languages AS bun
+
+RUN << 'EOF'
+set -e
+
+# Verify installation
+/.sprite/bin/bun --version
+
+# Test Bun
+echo 'console.log("Hello from Bun!");' > /tmp/hello.js
+/.sprite/bin/bun run /tmp/hello.js
+
+echo "1" > /status
+EOF
+
+# -- Deno
+
+FROM languages AS deno
+
+RUN << 'EOF'
+set -e
+
+# Verify installation
+/.sprite/bin/deno --version
+
+# Test Deno
+/.sprite/bin/deno eval 'console.log("Hello from Deno!")'
+
+echo "1" > /status
+EOF
+
+# -- Java
+
+FROM languages AS java
+
+RUN << 'EOF'
+set -e
+
+# Verify installation
+/.sprite/bin/java -version
+/.sprite/bin/javac -version
+
+echo "1" > /status
+EOF
+
+# -- pyenv + Python + uv
+
+FROM languages AS python
+
+RUN << 'EOF'
+set -e
+
+# Verify installation
+/.sprite/bin/python --version
+/.sprite/bin/pip --version
+/.sprite/bin/pyenv --version
+PYENV_VERSION=not-installed /.sprite/bin/uv --version
+/.sprite/bin/uvx --version
+
+# Show installed versions
+/.sprite/bin/pyenv versions
+
+# Test Python
+/.sprite/bin/python -c "import sys; print(f'Hello from Python {sys.version.split()[0]}!')"
+
+echo "1" > /status
+EOF
+
+FROM ubuntu-base
+
+RUN --mount=type=bind,from=node,source=/status,target=/status/node,ro \
+    --mount=type=bind,from=erlang,source=/status,target=/status/erlang,ro \
+    --mount=type=bind,from=elixir,source=/status,target=/status/elixir,ro \
+    --mount=type=bind,from=go,source=/status,target=/status/go,ro \
+    --mount=type=bind,from=ruby,source=/status,target=/status/ruby,ro \
+    --mount=type=bind,from=rust,source=/status,target=/status/rust,ro \
+    --mount=type=bind,from=bun,source=/status,target=/status/bun,ro \
+    --mount=type=bind,from=deno,source=/status,target=/status/deno,ro \
+    --mount=type=bind,from=java,source=/status,target=/status/java,ro \
+    --mount=type=bind,from=python,source=/status,target=/status/python,ro \
+    << 'EOF'
+for status in /status/*
+do
+    if test "$(cat "$status")" != "1"
+    then
+        echo "error: $(basename "$status") tests failed" >&2
+        failed=1
+    fi
+done
+exit "${failed:-0}"
+EOF
