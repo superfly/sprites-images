@@ -81,41 +81,85 @@ jobs:
 
       - name: Build images
         id: build
-        if: steps.changes.outputs.changed != ''
+        if: steps.changes.outputs.changed != '' || steps.changes.outputs.tests != ''
         env:
           BRANCH: ${{ github.head_ref || github.event.merge_group.base_ref }}
           CHANGED: ${{ steps.changes.outputs.changed }}
+          TESTS: ${{ steps.changes.outputs.tests }}
           AWS_ACCESS_KEY_ID: ${{ secrets.CACHE_S3_ACCESS_KEY }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.CACHE_S3_SECRET_ACCESS_KEY }}
         run: |
           # Use a separate cache for each target. Read from both the current and
           # main branch caches. Write the result back to the current branch.
-          jq --arg bucket "$BUCKET" --arg branch "${BRANCH#refs/heads/}" '
+          jq --arg bucket "$BUCKET" --arg branch "${BRANCH#refs/heads/}" --arg oci "$RUNNER_TEMP/oci" '
               def ref($name):
                   "type=s3,region=\($ENV.AWS_REGION),endpoint_url=\($ENV.AWS_ENDPOINT_URL_S3),bucket=\($bucket),name=\($name)";
               ($branch | gsub("[^A-Za-z0-9._/-]"; "-")) as $branch
               | {target: (.target | keys | map({key: ., value: {
-                  output: ["type=image,rewrite-timestamp=true"],
+                  output: ["type=oci,tar=false,dest=\($oci),rewrite-timestamp=true", "type=tar,dest=-"],
                   "cache-from": [ref("\(.)-\($branch)"), ref("\(.)-main")],
                   "cache-to": [ref("\(.)-\($branch)") + ",mode=max,ignore-error=true"]
               }}) | from_entries)}
           ' "$RUNNER_TEMP/bake.json" > "$RUNNER_TEMP/cache.json"
 
-          docker buildx bake --builder "$BUILDER" \
-              -f docker-bake.hcl -f docker-bake.json -f "$RUNNER_TEMP/cache.json" \
-              --metadata-file "$RUNNER_TEMP/metadata.json" \
-              $CHANGED || {
-            echo "::error::failed to build images" >&2
+          docker buildx bake --print default test > "$RUNNER_TEMP/bake-all.json" || {
+            echo "::error::failed to read docker-bake.hcl" >&2
             exit 1
           }
+
+          # When bake targets share steps through target: contexts, BuildKit
+          # doesn't reuse the cached results (moby/buildkit#6418,
+          # docker/buildx#414). To work around this, bake one target at a time
+          # and swap its target: contexts for unpacked oci-layout images.
+          # Somehow this is still faster.
+          ORDER=$(
+              jq -r --arg changed "$CHANGED" --arg tests "$TESTS" '
+                  . as $bake
+                  | def deps($t):
+                      $bake.target[$t].contexts // {} | .[]
+                      | select(startswith("target:")) | ltrimstr("target:");
+                    def visit($t):
+                      if any(.[]; . == $t) then . else (reduce deps($t) as $d (.; visit($d))) + [$t] end;
+                  ($changed | split(" ")) + [$tests | split(" ")[] | select(. != "") | deps(.)]
+                  | reduce (.[] | select(. != "")) as $t ([]; visit($t))
+                  | join(" ")
+              ' "$RUNNER_TEMP/bake-all.json"
+          ) || {
+            echo "::error::failed to order targets" >&2
+            exit 1
+          }
+
+          mkdir -p "$RUNNER_TEMP/oci" "$RUNNER_TEMP/metadata" "$RUNNER_TEMP/uncompressed"
+          echo '{}' > "$RUNNER_TEMP/contexts.json"
+          for target in $ORDER
+          do
+              docker buildx bake --builder "$BUILDER" --allow "fs=$RUNNER_TEMP/oci" \
+                  -f docker-bake.hcl -f docker-bake.json \
+                  -f "$RUNNER_TEMP/cache.json" -f "$RUNNER_TEMP/contexts.json" \
+                  --metadata-file "$RUNNER_TEMP/metadata/$target.json" \
+                  "$target" | wc -c > "$RUNNER_TEMP/uncompressed/$target" || {
+                echo "::error::failed to build $target" >&2
+                exit 1
+              }
+              jq -s add "$RUNNER_TEMP"/metadata/*.json > "$RUNNER_TEMP/metadata.json"
+
+              jq --slurpfile metadata "$RUNNER_TEMP/metadata.json" --arg oci "$RUNNER_TEMP/oci" '
+                  {target: (.target | map_values({contexts: (.contexts // {} | with_entries(
+                      (.value | ltrimstr("target:")) as $dep
+                      | select((.value | startswith("target:")) and $metadata[0][$dep] != null)
+                      | .value = "oci-layout://\($oci)@\($metadata[0][$dep]["containerimage.digest"])"
+                  ))}))}
+              ' "$RUNNER_TEMP/bake-all.json" > "$RUNNER_TEMP/contexts.json" || {
+                echo "::error::failed to resolve the $target contexts" >&2
+                exit 1
+              }
+          done
 
       - name: Measure layer sizes
         id: sizes
         if: steps.changes.outputs.changed != ''
         env:
           TARGETS: ${{ steps.changes.outputs.changed }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.CACHE_S3_ACCESS_KEY }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.CACHE_S3_SECRET_ACCESS_KEY }}
         run: |
           mkdir -p "$RUNNER_TEMP/sizes"
           for target in $TARGETS
@@ -132,20 +176,10 @@ jobs:
                 echo "::error::failed to read the $target manifest" >&2
                 exit 1
               }
-              uncompressed=$(
-                  set -o pipefail
-                  docker buildx bake --builder "$BUILDER" --progress quiet \
-                      -f docker-bake.hcl -f docker-bake.json -f "$RUNNER_TEMP/cache.json" \
-                      --set "$target.cache-to=" --set "$target.output=type=tar,dest=-" \
-                      "$target" | wc -c
-              ) || {
-                echo "::error::failed to export the $target image" >&2
-                exit 1
-              }
-              jq --argjson uncompressed "$uncompressed" '{
+              jq --slurpfile uncompressed "$RUNNER_TEMP/uncompressed/$target" '{
                   layers: (.layers | length),
                   compressed: (.layers | map(.size) | add // 0),
-                  uncompressed: $uncompressed
+                  uncompressed: $uncompressed[0]
               }' "$manifest" > "$RUNNER_TEMP/sizes/$target.json" || {
                 echo "::error::failed to measure the $target layers" >&2
                 exit 1
@@ -157,7 +191,9 @@ jobs:
         env:
           TESTS: ${{ steps.changes.outputs.tests }}
         run: |
-          docker buildx bake --builder "$BUILDER" $TESTS || {
+          docker buildx bake --builder "$BUILDER" --allow "fs=$RUNNER_TEMP/oci" \
+              -f docker-bake.hcl -f docker-bake.json -f "$RUNNER_TEMP/contexts.json" \
+              $TESTS || {
             echo "::error::image tests failed" >&2
             exit 1
           }
