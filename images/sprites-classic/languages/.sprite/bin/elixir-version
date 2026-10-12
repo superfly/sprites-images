@@ -1,0 +1,74 @@
+#!/bin/bash
+# Lightweight Elixir version manager (downloads precompiled archives)
+
+set -e
+
+ELIXIR_ROOT="/.sprite/languages/elixir"
+VERSIONS_DIR="$ELIXIR_ROOT/versions"
+
+ensure_dirs() {
+  mkdir -p "$VERSIONS_DIR"
+}
+
+download_and_install() {
+  local version="$1"
+  local otp_major
+  otp_major=$(erl -eval 'io:format("~s", [erlang:system_info(otp_release)]), halt().' -noshell)
+  local install_dir="$VERSIONS_DIR/$version-otp-$otp_major"
+  local tmp_zip
+  tmp_zip=$(mktemp)
+  echo "Downloading Elixir $version for OTP $otp_major..."
+  set +e
+  curl -fsSL "https://repo.hex.pm/builds/elixir/v$version-otp-$otp_major.zip" -o "$tmp_zip" || \
+  curl -fsSL "https://github.com/elixir-lang/elixir/releases/download/v$version/elixir-otp-$otp_major.zip" -o "$tmp_zip" || \
+  curl -fsSL "https://github.com/elixir-lang/elixir/releases/download/v$version/Precompiled.zip" -o "$tmp_zip"
+  local rc=$?
+  set -e
+  if [ $rc -ne 0 ] || [ ! -s "$tmp_zip" ]; then
+    echo "Failed to download Elixir $version"
+    exit 1
+  fi
+  mkdir -p "$install_dir"
+  unzip -q "$tmp_zip" -d "$install_dir"
+  rm -f "$tmp_zip"
+  ln -sfn "$install_dir" "$ELIXIR_ROOT/current"
+}
+
+case "$1" in
+  install)
+    ensure_dirs
+    if [ -z "$2" ]; then
+      echo "Usage: elixir-version install <version>"
+      exit 1
+    fi
+    download_and_install "$2"
+    ;;
+  use)
+    ensure_dirs
+    if [ -z "$2" ]; then
+      echo "Usage: elixir-version use <version>"
+      exit 1
+    fi
+    dest=$(ls -d "$VERSIONS_DIR/$2"* 2>/dev/null | head -n1)
+    if [ -z "$dest" ]; then
+      echo "Version $2 not installed"
+      exit 1
+    fi
+    ln -sfn "$dest" "$ELIXIR_ROOT/current"
+    ;;
+  list)
+    ensure_dirs
+    ls -1 "$VERSIONS_DIR" || true
+    ;;
+  current)
+    if [ -L "$ELIXIR_ROOT/current" ]; then
+      readlink "$ELIXIR_ROOT/current"
+    else
+      echo "none"
+    fi
+    ;;
+  *)
+    echo "Elixir lightweight manager"
+    echo "Usage: elixir-version <install|use|list|current> [args]"
+    ;;
+esac

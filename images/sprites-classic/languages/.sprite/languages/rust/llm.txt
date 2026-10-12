@@ -1,0 +1,80 @@
+Rust Installation (via rustup)
+==============================
+
+This installation uses rustup for managing Rust toolchains.
+
+Installation Location:
+- rustup: /.sprite/languages/rust/rustup
+- cargo: /.sprite/languages/rust/cargo
+- Binaries: /.sprite/bin (shim wrappers)
+
+Default Version: 1.90.0
+
+Using Rust:
+-----------
+Rust is immediately available:
+  rustc --version
+  cargo --version
+  cargo new my_project
+  cargo build
+  cargo run
+  cargo test
+
+Managing Toolchains:
+--------------------
+Using rustup directly:
+  rustup toolchain install stable     # Install stable
+  rustup toolchain install nightly    # Install nightly
+  rustup toolchain install 1.88.0     # Install specific version
+  rustup toolchain list               # List toolchains
+  rustup default stable               # Set default
+  rustup override set nightly         # Set for current directory
+  rustup update                       # Update toolchains
+
+Installing Crates:
+------------------
+Global tools (installed to CARGO_HOME/bin):
+  cargo install ripgrep
+  cargo install cargo-edit
+  cargo install sccache
+
+Project dependencies (in Cargo.toml):
+  [dependencies]
+  serde = "1.0"
+  tokio = { version = "1.0", features = ["full"] }
+
+Using Different Toolchains:
+---------------------------
+For a single command:
+  cargo +nightly build
+  cargo +1.88.0 test
+  rustc +stable --version
+
+Common Commands:
+----------------
+cargo new my_project        # Create new project
+cargo init                  # Initialize in existing directory
+cargo build                 # Build project
+cargo build --release       # Build optimized
+cargo run                   # Build and run
+cargo test                  # Run tests
+cargo doc --open            # Generate and open docs
+cargo clippy                # Run linter
+cargo fmt                   # Format code
+cargo clean                 # Clean build artifacts
+
+Environment Variables:
+----------------------
+RUSTUP_HOME                 # rustup installation
+CARGO_HOME                  # cargo and installed tools
+RUST_BACKTRACE             # Set to 1 for full backtraces
+CARGO_TARGET_DIR           # Override build directory
+
+Notes:
+------
+- Components included: clippy, rust-src, rust-analysis, rustfmt
+- Use rust-toolchain.toml in projects to specify toolchain
+- cargo install puts binaries in CARGO_HOME/bin
+- Each project has its own target/ directory for builds
+- Use cargo workspaces for multi-crate projects
+- Shims dynamically set PATH; no shell profile scripts are modified

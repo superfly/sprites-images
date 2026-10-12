@@ -1,0 +1,177 @@
+name: Test
+
+on:
+  merge_group:
+  pull_request:
+
+concurrency:
+  group: test-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  AWS_REGION: auto
+  AWS_ENDPOINT_URL_S3: https://t3.storage.dev
+  BUCKET: ${{ vars.CACHE_S3_BUCKET }}
+
+jobs:
+  test:
+    name: Build and test images
+    runs-on:
+      group: sprite-env-amd64
+    permissions:
+      contents: read
+    env:
+      BUILDER: test-${{ github.run_id }}-${{ github.run_attempt }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Docker
+        run: |
+          # The default backend doesn't support S3 caching
+          docker buildx create --name "$BUILDER" --driver docker-container --bootstrap || {
+            echo "::error::failed to create buildx builder" >&2
+            exit 1
+          }
+
+      - name: Build images
+        id: build
+        env:
+          BRANCH: ${{ github.head_ref || github.event.merge_group.base_ref }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.CACHE_S3_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.CACHE_S3_SECRET_ACCESS_KEY }}
+        run: |
+          docker buildx bake --print default > "$RUNNER_TEMP/bake.json" || {
+            echo "::error::failed to read docker-bake.hcl" >&2
+            exit 1
+          }
+          TARGETS=$(jq -r '.group.default.targets | join(" ")' "$RUNNER_TEMP/bake.json")
+          echo "targets=$TARGETS" >> "$GITHUB_OUTPUT"
+
+          # Use a separate cache for each target. Read from both the current and
+          # main branch caches. Write the result back to the current branch.
+          jq --arg bucket "$BUCKET" --arg branch "${BRANCH#refs/heads/}" '
+              def ref($name):
+                  "type=s3,region=\($ENV.AWS_REGION),endpoint_url=\($ENV.AWS_ENDPOINT_URL_S3),bucket=\($bucket),name=\($name)";
+              ($branch | gsub("[^A-Za-z0-9._/-]"; "-")) as $branch
+              | {target: (.target | keys | map({key: ., value: {
+                  output: ["type=image,rewrite-timestamp=true"],
+                  "cache-from": [ref("\(.)-\($branch)"), ref("\(.)-main")],
+                  "cache-to": [ref("\(.)-\($branch)") + ",mode=max,ignore-error=true"]
+              }}) | from_entries)}
+          ' "$RUNNER_TEMP/bake.json" > "$RUNNER_TEMP/cache.json"
+
+          docker buildx bake --builder "$BUILDER" \
+              -f docker-bake.hcl -f docker-bake.json -f "$RUNNER_TEMP/cache.json" \
+              --metadata-file "$RUNNER_TEMP/metadata.json" \
+              $TARGETS || {
+            echo "::error::failed to build images" >&2
+            exit 1
+          }
+
+      - name: Measure layer sizes
+        id: sizes
+        env:
+          TARGETS: ${{ steps.build.outputs.targets }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.CACHE_S3_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.CACHE_S3_SECRET_ACCESS_KEY }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/sizes"
+          for target in $TARGETS
+          do
+              ref=$(
+                  jq -r --arg t "$target" '.[$t]["buildx.build.ref"] // empty' \
+                      "$RUNNER_TEMP/metadata.json"
+              )
+              test -n "$ref" || continue
+
+              manifest="$RUNNER_TEMP/manifest-$target.json"
+              docker buildx history inspect attachment --builder "$BUILDER" \
+                  "${ref##*/}" --type manifest > "$manifest" || {
+                echo "::error::failed to read the $target manifest" >&2
+                exit 1
+              }
+              uncompressed=$(
+                  set -o pipefail
+                  docker buildx bake --builder "$BUILDER" --progress quiet \
+                      -f docker-bake.hcl -f docker-bake.json -f "$RUNNER_TEMP/cache.json" \
+                      --set "$target.cache-to=" --set "$target.output=type=tar,dest=-" \
+                      "$target" | wc -c
+              ) || {
+                echo "::error::failed to export the $target image" >&2
+                exit 1
+              }
+              jq --argjson uncompressed "$uncompressed" '{
+                  layers: (.layers | length),
+                  compressed: (.layers | map(.size) | add // 0),
+                  uncompressed: $uncompressed
+              }' "$manifest" > "$RUNNER_TEMP/sizes/$target.json" || {
+                echo "::error::failed to measure the $target layers" >&2
+                exit 1
+              }
+          done
+
+      - name: Run tests
+        run: |
+          docker buildx bake --builder "$BUILDER" test || {
+            echo "::error::image tests failed" >&2
+            exit 1
+          }
+
+      - name: Generate app token
+        if: always() && github.event_name == 'pull_request' && steps.sizes.outcome == 'success'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: app-token
+        with:
+          client-id: ${{ secrets.SPRITES_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.SPRITES_BOT_PRIVATE_KEY }}
+          permission-pull-requests: write
+
+      - name: Comment image sizes
+        if: always() && github.event_name == 'pull_request' && steps.sizes.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          TARGETS: ${{ steps.build.outputs.targets }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          body="$RUNNER_TEMP/comment.md"
+          cat << EOF > "$body"
+          ### Image sizes
+
+          | Target | Layers | Compressed | Uncompressed |
+          | --- | ---: | ---: | ---: |
+          $(
+              for target in $TARGETS
+              do
+                  sizes="$RUNNER_TEMP/sizes/$target.json"
+                  if test -f "$sizes"
+                  then
+                      count=$(jq '.layers' "$sizes")
+                      compressed=$(
+                          numfmt --to=iec-i --suffix=B "$(jq '.compressed' "$sizes")"
+                      )
+                      uncompressed=$(
+                          numfmt --to=iec-i --suffix=B "$(jq '.uncompressed' "$sizes")"
+                      )
+                      echo "| $target | $count | $compressed | $uncompressed |"
+                  else
+                      echo "| $target | not built | | |"
+                  fi
+              done
+          )
+
+          __Run for commit ${HEAD_SHA:0:7}. ([Run]($RUN_URL))__
+          EOF
+
+          gh pr comment "$PR_NUMBER" --body-file "$body" || {
+            echo "::error::failed to comment on pull request #$PR_NUMBER" >&2
+            exit 1
+          }
+
+      - name: Remove buildx builder
+        if: always()
+        run: docker buildx rm --force "$BUILDER" || true

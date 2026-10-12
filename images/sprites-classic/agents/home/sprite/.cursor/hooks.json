@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "hooks": {
+    "postToolUse": [
+      {
+        "command": ".sprite-shared/hooks/sprite-env-check.sh --format cursor postToolUse",
+        "matcher": "Shell|Write|Edit"
+      }
+    ]
+  }
+}

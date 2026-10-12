@@ -1,0 +1,85 @@
+Go Installation (Direct Download)
+=================================
+
+This is a direct installation of official Go releases.
+
+Installation Location:
+- Go versions: /.sprite/languages/go/versions/<version>
+- Current version: /.sprite/languages/go/current (symlink)
+- Binaries: /.sprite/bin (symlinked)
+- Workspace: /.sprite/languages/go/workspace (GOPATH)
+
+Default Version: 1.25.1
+
+Using Go:
+---------
+Go is immediately available:
+  go version
+  go build
+  go run main.go
+  go test
+  go mod init
+
+Managing Versions:
+------------------
+Use the go-version helper script:
+  go-version install 1.22.0    # Install a Go version
+  go-version list              # List installed versions
+  go-version use 1.22.0        # Switch to a version
+  go-version current           # Show current version
+
+Module Management:
+------------------
+  go mod init example.com/app  # Initialize module
+  go get github.com/pkg/errors # Add dependency
+  go mod download              # Download dependencies
+  go mod tidy                  # Clean up go.mod
+  go mod vendor                # Vendor dependencies
+
+Installing Tools:
+-----------------
+Tools are installed to GOPATH/bin:
+  go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+  go install golang.org/x/tools/gopls@latest
+  go install github.com/go-delve/delve/cmd/dlv@latest
+
+Building:
+---------
+  go build                     # Build current package
+  go build -o myapp            # Build with custom output
+  go build ./...               # Build all packages
+  CGO_ENABLED=0 go build       # Static binary
+
+Cross-compilation:
+  GOOS=linux GOARCH=amd64 go build
+  GOOS=windows GOARCH=amd64 go build
+  GOOS=darwin GOARCH=arm64 go build
+
+Common Commands:
+----------------
+go version                   # Check Go version
+go env                       # Show environment
+go list ./...                # List packages
+go fmt ./...                 # Format code
+go vet ./...                 # Check for errors
+go test ./...                # Run tests
+go test -v -cover ./...      # Verbose with coverage
+go clean -cache              # Clear build cache
+
+Environment Variables:
+----------------------
+GOROOT                       # Go installation directory
+GOPATH                       # Workspace directory
+GOCACHE                      # Build cache location
+GOMODCACHE                   # Module cache location
+GO111MODULE                  # Module mode (auto/on/off)
+GOPROXY                      # Module proxy
+CGO_ENABLED                  # Enable/disable cgo
+
+Notes:
+------
+- Go modules are the standard dependency management
+- Tools installed with 'go install' go to GOPATH/bin
+- Each Go version is completely independent
+- Use go-version helper to manage multiple versions
+- Build cache significantly speeds up compilation

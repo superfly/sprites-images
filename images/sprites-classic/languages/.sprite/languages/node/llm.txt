@@ -1,0 +1,70 @@
+Node.js Installation (via nvm)
+==============================
+
+This installation uses nvm for managing Node.js versions.
+
+Installation Location:
+- nvm: /.sprite/languages/node/nvm
+- Binaries: /.sprite/bin (symlinked from active version)
+- npm cache: /.sprite/languages/node/.npm-cache
+
+Default Version: 24.18.0
+
+Using Node.js:
+--------------
+The default Node.js version is immediately available:
+  node --version
+  npm --version
+  npx --version
+  npm install <package>
+  npm run <script>
+
+Managing Versions:
+------------------
+Option 1: Use the helper script (no sourcing required):
+  nvm-helper install 18.17.0  # Install a new version
+  nvm-helper list             # List installed versions
+  nvm-helper use 18.17.0      # Switch version & update symlinks
+
+Option 2: Use nvm directly (requires environment setup):
+  nvm install 18.17.0
+  nvm use 18.17.0
+  nvm alias default 18.17.0
+  nvm list
+
+Installing npm Packages:
+------------------------
+Local packages (in project):
+  npm install express
+  npm install --save-dev nodemon
+
+Global packages (for current Node version):
+  npm install -g typescript
+  npm install -g @angular/cli
+
+To install for all versions, switch versions and install:
+  nvm use 20.17.0 && npm install -g <package>
+  nvm use 21.6.0 && npm install -g <package>
+
+Common Commands:
+----------------
+node --version              # Check Node.js version
+npm --version               # Check npm version
+npm init                    # Create package.json
+npm install                 # Install dependencies
+npm run <script>            # Run package.json script
+npx <package>               # Run package without installing
+
+Environment Variables:
+----------------------
+NVM_DIR                     # nvm installation directory
+NODE_PATH                   # Additional module directories
+NPM_CONFIG_PREFIX           # npm global installation prefix
+NPM_CONFIG_CACHE            # npm cache location
+
+Notes:
+------
+- nvm is a shell function, not a binary
+- Each Node.js version has its own global packages
+- Use .nvmrc files in projects to specify Node.js version
+- Shims dynamically set PATH; no static symlinks are used
