@@ -22,6 +22,7 @@ jobs:
       contents: read
     env:
       BUILDER: test-${{ github.run_id }}-${{ github.run_attempt }}
+      CI_FILES: .github/workflows/test.yml scripts/changed-targets.sh
 
     steps:
       - name: Checkout code
@@ -35,12 +36,10 @@ jobs:
             exit 1
           }
 
-      - name: Build images
-        id: build
+      - name: Detect changes
+        id: changes
         env:
-          BRANCH: ${{ github.head_ref || github.event.merge_group.base_ref }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.CACHE_S3_ACCESS_KEY }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.CACHE_S3_SECRET_ACCESS_KEY }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
         run: |
           docker buildx bake --print default > "$RUNNER_TEMP/bake.json" || {
             echo "::error::failed to read docker-bake.hcl" >&2
@@ -49,6 +48,46 @@ jobs:
           TARGETS=$(jq -r '.group.default.targets | join(" ")' "$RUNNER_TEMP/bake.json")
           echo "targets=$TARGETS" >> "$GITHUB_OUTPUT"
 
+          git fetch --depth=1 origin "$BASE_SHA" || {
+            echo "::error::failed to fetch $BASE_SHA" >&2
+            exit 1
+          }
+          git diff --name-only "$BASE_SHA" HEAD > "$RUNNER_TEMP/changes" || {
+            echo "::error::failed to diff against $BASE_SHA" >&2
+            exit 1
+          }
+          if git diff --quiet "$BASE_SHA" HEAD -- $CI_FILES
+          then
+              CHANGED=$(scripts/changed-targets.sh default < "$RUNNER_TEMP/changes") || {
+              echo "::error::failed to determine changed targets" >&2
+                exit 1
+              }
+              CHANGED=$(printf '%s\n' "$CHANGED" | paste -sd ' ' -)
+              TESTS=$(scripts/changed-targets.sh test < "$RUNNER_TEMP/changes") || {
+                echo "::error::failed to determine changed tests" >&2
+                exit 1
+              }
+              TESTS=$(printf '%s\n' "$TESTS" | paste -sd ' ' -)
+          else
+              CHANGED=$TARGETS
+              docker buildx bake --print test > "$RUNNER_TEMP/bake-test.json" || {
+                echo "::error::failed to read docker-bake.hcl" >&2
+                exit 1
+              }
+              TESTS=$(jq -r '.group.test.targets | join(" ")' "$RUNNER_TEMP/bake-test.json")
+          fi
+          echo "changed=$CHANGED" >> "$GITHUB_OUTPUT"
+          echo "tests=$TESTS" >> "$GITHUB_OUTPUT"
+
+      - name: Build images
+        id: build
+        if: steps.changes.outputs.changed != ''
+        env:
+          BRANCH: ${{ github.head_ref || github.event.merge_group.base_ref }}
+          CHANGED: ${{ steps.changes.outputs.changed }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.CACHE_S3_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.CACHE_S3_SECRET_ACCESS_KEY }}
+        run: |
           # Use a separate cache for each target. Read from both the current and
           # main branch caches. Write the result back to the current branch.
           jq --arg bucket "$BUCKET" --arg branch "${BRANCH#refs/heads/}" '
@@ -65,15 +104,16 @@ jobs:
           docker buildx bake --builder "$BUILDER" \
               -f docker-bake.hcl -f docker-bake.json -f "$RUNNER_TEMP/cache.json" \
               --metadata-file "$RUNNER_TEMP/metadata.json" \
-              $TARGETS || {
+              $CHANGED || {
             echo "::error::failed to build images" >&2
             exit 1
           }
 
       - name: Measure layer sizes
         id: sizes
+        if: steps.changes.outputs.changed != ''
         env:
-          TARGETS: ${{ steps.build.outputs.targets }}
+          TARGETS: ${{ steps.changes.outputs.changed }}
           AWS_ACCESS_KEY_ID: ${{ secrets.CACHE_S3_ACCESS_KEY }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.CACHE_S3_SECRET_ACCESS_KEY }}
         run: |
@@ -113,8 +153,11 @@ jobs:
           done
 
       - name: Run tests
+        if: steps.changes.outputs.tests != ''
+        env:
+          TESTS: ${{ steps.changes.outputs.tests }}
         run: |
-          docker buildx bake --builder "$BUILDER" test || {
+          docker buildx bake --builder "$BUILDER" $TESTS || {
             echo "::error::image tests failed" >&2
             exit 1
           }
@@ -135,7 +178,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          TARGETS: ${{ steps.build.outputs.targets }}
+          TARGETS: ${{ steps.changes.outputs.targets }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           body="$RUNNER_TEMP/comment.md"
@@ -159,7 +202,7 @@ jobs:
                       )
                       echo "| $target | $count | $compressed | $uncompressed |"
                   else
-                      echo "| $target | not built | | |"
+                      echo "| $target | unchanged | | |"
                   fi
               done
           )
