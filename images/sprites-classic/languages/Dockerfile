@@ -752,6 +752,50 @@ COPY --from=rust /.sprite/ /.sprite/
 
 COPY --chmod=u=rwX,go=rX .sprite/ /.sprite/
 
+RUN << 'EOF'
+set -e
+
+cat >> /etc/bash.bashrc << 'RC'
+
+# Source language paths (prepend to PATH, avoiding duplicates)
+if [ -r /etc/profile.d/languages_paths ]; then
+    while IFS= read -r p; do
+        case ":$PATH:" in
+            *":$p:"*) ;;
+            *) [ -d "$p" ] && PATH="$p:$PATH" ;;
+        esac
+    done < /etc/profile.d/languages_paths
+    export PATH
+fi
+RC
+
+cat >> /etc/zsh/zshrc << 'RC'
+
+# Source language paths (prepend to PATH, avoiding duplicates)
+if [ -r /etc/profile.d/languages_paths ]; then
+    while IFS= read -r p; do
+        case ":$PATH:" in
+            *":$p:"*) ;;
+            *) [ -d "$p" ] && PATH="$p:$PATH" ;;
+        esac
+    done < /etc/profile.d/languages_paths
+    export PATH
+fi
+RC
+
+cat >> /etc/fish/config.fish << 'RC'
+
+# Source language paths (prepend to PATH, avoiding duplicates)
+if test -r /etc/profile.d/languages_paths
+    for p in (cat /etc/profile.d/languages_paths)
+        if test -d "$p"; and not contains $p $PATH
+            set -gx PATH $p $PATH
+        end
+    end
+end
+RC
+EOF
+
 FROM languages-common AS languages-noshims
 
 RUN --mount=type=bind,from=bun,source=/etc/profile.d/languages_env,target=/tmp/languages/bun \
@@ -801,34 +845,12 @@ cat >> /etc/bash.bashrc << 'RC'
 
 # Source language activation functions (self-unset after first use)
 [ -r /.sprite/languages/shells/languages.bash ] && . /.sprite/languages/shells/languages.bash
-
-# Source language paths (prepend to PATH, avoiding duplicates)
-if [ -r /etc/profile.d/languages_paths ]; then
-    while IFS= read -r p; do
-        case ":$PATH:" in
-            *":$p:"*) ;;
-            *) [ -d "$p" ] && PATH="$p:$PATH" ;;
-        esac
-    done < /etc/profile.d/languages_paths
-    export PATH
-fi
 RC
 
 cat >> /etc/zsh/zshrc << 'RC'
 
 # Source language activation functions (self-unset after first use)
 [ -r /.sprite/languages/shells/languages.zsh ] && . /.sprite/languages/shells/languages.zsh
-
-# Source language paths (prepend to PATH, avoiding duplicates)
-if [ -r /etc/profile.d/languages_paths ]; then
-    while IFS= read -r p; do
-        case ":$PATH:" in
-            *":$p:"*) ;;
-            *) [ -d "$p" ] && PATH="$p:$PATH" ;;
-        esac
-    done < /etc/profile.d/languages_paths
-    export PATH
-fi
 RC
 
 cat >> /etc/fish/config.fish << 'RC'
@@ -836,15 +858,6 @@ cat >> /etc/fish/config.fish << 'RC'
 # Source language activation functions (self-erase after first use)
 if test -r /.sprite/languages/shells/languages.fish
     source /.sprite/languages/shells/languages.fish
-end
-
-# Source language paths (prepend to PATH, avoiding duplicates)
-if test -r /etc/profile.d/languages_paths
-    for p in (cat /etc/profile.d/languages_paths)
-        if test -d "$p"; and not contains $p $PATH
-            set -gx PATH $p $PATH
-        end
-    end
 end
 RC
 EOF
