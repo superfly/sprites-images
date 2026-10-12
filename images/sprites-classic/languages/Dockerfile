@@ -2,6 +2,29 @@
 
 FROM sprites-classic-devtools AS base
 
+FROM base AS ccache
+ARG UBUNTU_SNAPSHOT
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    << 'EOF'
+set -e
+
+# switch the secretly snapshotted lists back to their snapshot names so APT
+# fetches from the right server
+cd /var/lib/apt/lists
+for list in archive.ubuntu.com_ubuntu_dists_* security.ubuntu.com_ubuntu_dists_*
+do
+    cp "$list" "snapshot.ubuntu.com_ubuntu_${UBUNTU_SNAPSHOT}_dists_${list#*_dists_}"
+done
+cd /
+
+apt-get install -y --no-install-recommends --snapshot "$UBUNTU_SNAPSHOT" ccache
+EOF
+
+ENV PATH="/usr/lib/ccache:$PATH" \
+    CCACHE_DIR=/var/cache/ccache \
+    CCACHE_MAXSIZE=2G
+
 # -- nvm + Node.js
 
 FROM base AS node
@@ -87,9 +110,11 @@ SPEC
 
 # -- kerl and Erlang
 
-FROM base AS erlang
+FROM ccache AS erlang
+ARG CCACHE_REFRESH
 
 RUN --mount=type=cache,target=/.sprite/languages/erlang/kerl/archives \
+    --mount=type=cache,id=ccache,target=/var/cache/ccache \
     << 'EOF'
 set -e
 
@@ -403,11 +428,15 @@ SPEC
 
 # -- rbenv + Ruby
 
-FROM base AS ruby
+FROM ccache AS ruby
+ARG CCACHE_REFRESH
 
 RUN --mount=type=cache,target=/root/.cache/gem \
+    --mount=type=cache,id=ccache,target=/var/cache/ccache \
     << 'EOF'
 set -e
+
+export RUBY_BUILD_BUILD_PATH=/tmp/ruby-build
 
 # Baseline pinned version as of 2025-10-04: 3.4.6
 RUBY_VERSION="${RUBY_VERSION:-3.4.6}"
@@ -638,11 +667,15 @@ SPEC
 
 # -- pyenv + Python + uv
 
-FROM base AS python
+FROM ccache AS python
+ARG CCACHE_REFRESH
 
 RUN --mount=type=cache,target=/root/.cache/pip \
+    --mount=type=cache,id=ccache,target=/var/cache/ccache \
     << 'EOF'
 set -e
+
+export PYTHON_BUILD_BUILD_PATH=/tmp/python-build
 
 # Baseline pinned version as of 2025-10-04: 3.13.7
 PYTHON_VERSION="${PYTHON_VERSION:-3.13.7}"

@@ -46,6 +46,9 @@ target "sprites-classic-languages" {
   contexts = {
     sprites-classic-devtools = "target:sprites-classic-devtools"
   }
+  args = {
+    UBUNTU_SNAPSHOT = UBUNTU_SNAPSHOT
+  }
 }
 
 # Node-only target for agent installers.

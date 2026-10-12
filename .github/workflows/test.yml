@@ -3,6 +3,8 @@ name: Test
 on:
   merge_group:
   pull_request:
+  push:
+    branches: [main]
 
 concurrency:
   group: test-${{ github.event.pull_request.number || github.ref }}
@@ -39,7 +41,7 @@ jobs:
       - name: Detect changes
         id: changes
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
         run: |
           docker buildx bake --print default > "$RUNNER_TEMP/bake.json" || {
             echo "::error::failed to read docker-bake.hcl" >&2
@@ -79,11 +81,34 @@ jobs:
           echo "changed=$CHANGED" >> "$GITHUB_OUTPUT"
           echo "tests=$TESTS" >> "$GITHUB_OUTPUT"
 
+      - name: Restore ccache
+        if: contains(steps.changes.outputs.changed, 'sprites-classic-languages')
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/ccache
+          key: ccache-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: ccache-
+
+      - name: Load ccache into builder
+        if: contains(steps.changes.outputs.changed, 'sprites-classic-languages')
+        run: |
+          mkdir -p "$RUNNER_TEMP/ccache"
+          docker buildx build --builder "$BUILDER" --output type=cacheonly \
+              -f - "$RUNNER_TEMP/ccache" << 'EOF' || {
+          FROM busybox:1.38.0@sha256:fd7dc98638c8e305f4dc34e979f1c0fdfdcaeb0fbf8fcff77ae834b6da3d7e6e
+          RUN --mount=type=cache,id=ccache,target=/var/cache/ccache \
+              --mount=type=bind,target=/ccache \
+              cp -a /ccache/. /var/cache/ccache/
+          EOF
+            echo "::error::failed to load ccache into the builder" >&2
+            exit 1
+          }
+
       - name: Build images
         id: build
         if: steps.changes.outputs.changed != '' || steps.changes.outputs.tests != ''
         env:
-          BRANCH: ${{ github.head_ref || github.event.merge_group.base_ref }}
+          BRANCH: ${{ github.head_ref || github.event.merge_group.base_ref || github.ref_name }}
           CHANGED: ${{ steps.changes.outputs.changed }}
           TESTS: ${{ steps.changes.outputs.tests }}
           AWS_ACCESS_KEY_ID: ${{ secrets.CACHE_S3_ACCESS_KEY }}
@@ -154,6 +179,55 @@ jobs:
                 exit 1
               }
           done
+
+      - name: Refresh ccache
+        if: github.event_name == 'push' && contains(steps.changes.outputs.changed, 'sprites-classic-languages')
+        run: |
+          # main's layers are already cached, so rerun the compiled stages to
+          # fill the shared ccache. Force the rerun with CCACHE_REFRESH, since
+          # no-cache-filter gives RUN an empty cache mount.
+          jq -n --arg refresh "$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" '
+              {target: (["erlang", "ruby", "python"] | map({key: "ccache-\(.)", value: {
+                  inherits: ["sprites-classic-languages"],
+                  target: .,
+                  args: {CCACHE_REFRESH: $refresh},
+                  output: ["type=cacheonly"]
+              }}) | from_entries)}
+          ' > "$RUNNER_TEMP/ccache.json"
+
+          docker buildx bake --builder "$BUILDER" --allow "fs=$RUNNER_TEMP/oci" \
+              -f docker-bake.hcl -f docker-bake.json \
+              -f "$RUNNER_TEMP/contexts.json" -f "$RUNNER_TEMP/ccache.json" \
+              ccache-erlang ccache-ruby ccache-python || {
+            echo "::error::failed to refresh ccache" >&2
+            exit 1
+          }
+
+      - name: Extract ccache from builder
+        if: contains(steps.changes.outputs.changed, 'sprites-classic-languages')
+        run: |
+          rm -rf "$RUNNER_TEMP/ccache"
+          mkdir -p "$RUNNER_TEMP/empty"
+          docker buildx build --builder "$BUILDER" \
+              --output "type=local,dest=$RUNNER_TEMP/ccache" \
+              -f - "$RUNNER_TEMP/empty" << 'EOF' || {
+          FROM busybox:1.38.0@sha256:fd7dc98638c8e305f4dc34e979f1c0fdfdcaeb0fbf8fcff77ae834b6da3d7e6e AS extract
+          RUN --mount=type=cache,id=ccache,target=/var/cache/ccache \
+              cp -a /var/cache/ccache /ccache
+
+          FROM scratch
+          COPY --from=extract /ccache /
+          EOF
+            echo "::error::failed to extract ccache from the builder" >&2
+            exit 1
+          }
+
+      - name: Save ccache
+        if: contains(steps.changes.outputs.changed, 'sprites-classic-languages')
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/ccache
+          key: ccache-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Measure layer sizes
         id: sizes
