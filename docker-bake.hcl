@@ -121,3 +121,9 @@ target "sprites-classic-noshims" {
     sprites-classic-agents = "target:sprites-classic-agents-noshims"
   }
 }
+
+target "s2-nixos" {
+  context   = "./experimental/s2-nixos"
+  platforms = ["linux/amd64"]
+  attest    = ["type=provenance,disabled=true"]
+}
