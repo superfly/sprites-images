@@ -1,0 +1,112 @@
+name: Build bake targets
+description: >-
+  Builds planned bake targets one at a time, passing each dependency through the
+  OCI layout at <dir>/oci. The bake files must output each target there.
+
+  This avoids a bug in BuildKit where targets that share steps through target:
+  contexts don't reuse cached middle layers (moby/buildkit#6418,
+  docker/buildx#414).
+
+inputs:
+  dir:
+    description: Directory from the bake-plan action
+    required: true
+  order:
+    description: Targets to build from the bake-plan action
+    required: true
+  bake-files:
+    description: Space-separated extra bake files with the outputs for each target
+    required: true
+  cache-bucket:
+    description: S3 bucket for the build cache. Builds without a cache when empty.
+    default: ""
+  cache-endpoint:
+    description: S3 endpoint for the build cache
+    default: https://t3.storage.dev
+  cache-region:
+    description: S3 region for the build cache
+    default: auto
+  cache-access-key-id:
+    description: S3 access key ID for the build cache
+    default: ""
+  cache-secret-access-key:
+    description: S3 secret access key for the build cache
+    default: ""
+  cache-from:
+    description: Space-separated cache scopes to read
+    default: ""
+  cache-to:
+    description: Cache scope to write
+    default: ""
+  no-cache:
+    description: Space-separated targets to build without the cache
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Build targets
+      shell: bash
+      env:
+        DIR: ${{ inputs.dir }}
+        ORDER: ${{ inputs.order }}
+        BAKE_FILES: ${{ inputs.bake-files }}
+        CACHE_BUCKET: ${{ inputs.cache-bucket }}
+        CACHE_ENDPOINT: ${{ inputs.cache-endpoint }}
+        CACHE_REGION: ${{ inputs.cache-region }}
+        CACHE_FROM: ${{ inputs.cache-from }}
+        CACHE_TO: ${{ inputs.cache-to }}
+        NO_CACHE: ${{ inputs.no-cache }}
+        AWS_ACCESS_KEY_ID: ${{ inputs.cache-access-key-id }}
+        AWS_SECRET_ACCESS_KEY: ${{ inputs.cache-secret-access-key }}
+      run: |
+        ref() {
+            scope=$(printf '%s' "${2#refs/heads/}" | tr -c 'A-Za-z0-9._/-' '-')
+            echo "type=s3,region=$CACHE_REGION,endpoint_url=$CACHE_ENDPOINT,bucket=$CACHE_BUCKET,name=$1-$scope"
+        }
+
+        for file in $BAKE_FILES
+        do
+            BUILDX_BAKE_FILE=$BUILDX_BAKE_FILE:$file
+        done
+
+        mkdir -p "$DIR/oci" "$DIR/metadata" "$DIR/stdout-bytes"
+        for target in $ORDER
+        do
+            set --
+            if test -n "$CACHE_BUCKET"
+            then
+                for scope in $CACHE_FROM
+                do
+                    set -- "$@" --set "$target.cache-from=$(ref "$target" "$scope")"
+                done
+                if test -n "$CACHE_TO"
+                then
+                    set -- "$@" --set "$target.cache-to=$(ref "$target" "$CACHE_TO"),mode=max,ignore-error=true"
+                fi
+            fi
+            case " $NO_CACHE " in
+              *" $target "*)
+                set -- "$@" --set "$target.no-cache=true"
+                ;;
+            esac
+
+            docker buildx bake --allow "fs=$DIR/oci" \
+                --metadata-file "$DIR/metadata/$target.json" \
+                "$@" "$target" | wc -c > "$DIR/stdout-bytes/$target" || {
+              echo "::error::failed to build $target" >&2
+              exit 1
+            }
+            jq -s add "$DIR"/metadata/*.json > "$DIR/metadata.json"
+
+            jq --slurpfile metadata "$DIR/metadata.json" --arg oci "$DIR/oci" '
+                {target: (.target | map_values({contexts: (.contexts // {} | with_entries(
+                    (.value | ltrimstr("target:")) as $dep
+                    | select((.value | startswith("target:")) and $metadata[0][$dep] != null)
+                    | .value = "oci-layout://\($oci)@\($metadata[0][$dep]["containerimage.digest"])"
+                ))}))}
+            ' "$DIR/bake.json" > "$DIR/contexts.json" || {
+              echo "::error::failed to resolve the $target contexts" >&2
+              exit 1
+            }
+        done

@@ -1,0 +1,184 @@
+name: Build
+
+on:
+  workflow_call:
+    inputs:
+      group:
+        description: "Bake group to build and publish"
+        type: string
+        default: publish
+      no-cache:
+        description: "Space-separated targets to rebuild without the cache"
+        type: string
+        default: ""
+  workflow_dispatch:
+    inputs:
+      group:
+        description: "Bake group to build and publish"
+        type: string
+        default: publish
+      no-cache:
+        description: "Space-separated targets to rebuild without the cache"
+        type: string
+        default: ""
+
+concurrency:
+  group: build-${{ inputs.group || 'publish' }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build and publish images
+    runs-on:
+      group: sprite-env-amd64
+    permissions:
+      actions: read
+      contents: read
+      packages: write
+    env:
+      BUILDX_BUILDER: build-${{ github.run_id }}-${{ github.run_attempt }}
+      GROUP: ${{ inputs.group || 'publish' }}
+      IMAGE_ATTRS: >-
+        oci-mediatypes=true,rewrite-timestamp=true,annotation.org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }},annotation.org.opencontainers.image.revision=${{ github.sha }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Docker
+        run: |
+          # The default backend doesn't support S3 caching
+          docker buildx create --name "$BUILDX_BUILDER" --driver docker-container --bootstrap || {
+            echo "::error::failed to create buildx builder" >&2
+            exit 1
+          }
+
+      - name: Find last published commit
+        id: published
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # If three commits hit main around the same time, the second is
+          # skipped, even with our concurrency group. To avoid missing any
+          # changes, use the last successful run as the base instead of the
+          # commit's parent.
+          workflow=${GITHUB_WORKFLOW_REF%@*}
+          workflow=${workflow##*/}
+          sha=$(
+              gh api "repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?branch=$GITHUB_REF_NAME&event=push&status=success&per_page=1" \
+                  --jq '.workflow_runs[0].head_sha // empty'
+          ) || {
+            echo "::error::failed to find the last successful $workflow run" >&2
+            exit 1
+          }
+          echo "Last published commit: ${sha:-none}"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - name: Plan build
+        id: plan
+        uses: $/.github/actions/bake-plan
+        with:
+          group: ${{ env.GROUP }}
+          test-group: ""
+          base-sha: ${{ steps.published.outputs.sha }}
+          force-files: .github/workflows/build.yml
+
+      - name: Configure outputs
+        if: steps.plan.outputs.changed != ''
+        env:
+          BAKE_DIR: ${{ steps.plan.outputs.dir }}
+        run: |
+          PURE=$(docker buildx bake --print pure | jq -c '.group.pure.targets') || {
+            echo "::error::failed to read the pure targets" >&2
+            exit 1
+          }
+
+          # skip assigning a created date to pure targets
+          jq --argjson pure "$PURE" --arg attrs "$IMAGE_ATTRS" \
+              --arg build "annotation.org.opencontainers.image.created=$(date -u +%Y-%m-%dT%H:%M:%SZ)" '
+              .target | with_entries(.value = if .key | IN($pure[]) then $attrs else "\($attrs),\($build)" end)
+          ' "$BAKE_DIR/bake.json" > "$BAKE_DIR/attrs.json" || {
+            echo "::error::failed to compute image attributes" >&2
+            exit 1
+          }
+
+          jq --arg oci "$BAKE_DIR/oci" --slurpfile attrs "$BAKE_DIR/attrs.json" '
+              {target: (.target | keys | map({key: ., value: {
+                  output: ["type=oci,tar=false,dest=\($oci),\($attrs[0][.])"]
+              }}) | from_entries)}
+          ' "$BAKE_DIR/bake.json" > "$BAKE_DIR/outputs.json" || {
+            echo "::error::failed to configure outputs" >&2
+            exit 1
+          }
+
+      - name: Build images
+        if: steps.plan.outputs.changed != ''
+        uses: $/.github/actions/bake-build
+        with:
+          dir: ${{ steps.plan.outputs.dir }}
+          order: ${{ steps.plan.outputs.order }}
+          bake-files: ${{ steps.plan.outputs.dir }}/outputs.json
+          cache-bucket: ${{ vars.CACHE_S3_BUCKET }}
+          cache-access-key-id: ${{ secrets.CACHE_S3_ACCESS_KEY }}
+          cache-secret-access-key: ${{ secrets.CACHE_S3_SECRET_ACCESS_KEY }}
+          # Keep cache read-only here. The test workflow writes to it.
+          cache-from: main
+          no-cache: ${{ inputs.no-cache }}
+
+      - name: Log in to GitHub Container Registry
+        if: steps.plan.outputs.changed != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          printf '%s\n' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin || {
+            echo "::error::failed to log in to ghcr.io" >&2
+            exit 1
+          }
+
+      - name: Publish images
+        if: steps.plan.outputs.changed != ''
+        env:
+          BAKE_DIR: ${{ steps.plan.outputs.dir }}
+          TARGETS: ${{ steps.plan.outputs.changed }}
+        run: |
+          # bake is only used here to re-export cached steps
+          for target in $TARGETS
+          do
+              image=ghcr.io/$GITHUB_REPOSITORY/$target:latest
+              attrs=$(jq -r --arg t "$target" '.[$t]' "$BAKE_DIR/attrs.json")
+              docker buildx bake --allow "fs=$BAKE_DIR/oci" \
+                  --metadata-file "$BAKE_DIR/publish-$target.json" \
+                  --set "$target.output=type=image,name=$image,push=true,$attrs" \
+                  "$target" || {
+                echo "::error::failed to push $image" >&2
+                exit 1
+              }
+
+              built=$(
+                  jq -r --arg t "$target" '.[$t]["containerimage.digest"]' \
+                      "$BAKE_DIR/metadata.json"
+              )
+              pushed=$(
+                  jq -r --arg t "$target" '.[$t]["containerimage.digest"]' \
+                      "$BAKE_DIR/publish-$target.json"
+              )
+              test "$built" = "$pushed" || {
+                echo "::error::pushed $image $pushed differs from built $built" >&2
+                exit 1
+              }
+              echo "Pushed $image@$pushed"
+              echo "| \`$target\` | \`$pushed\` |" >> "$BAKE_DIR/published.md"
+          done
+
+          {
+            echo "### Published"
+            echo
+            echo "| Target | Digest |"
+            echo "| --- | --- |"
+            cat "$BAKE_DIR/published.md"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove buildx builder
+        if: always()
+        run: docker buildx rm --force "$BUILDX_BUILDER" || true

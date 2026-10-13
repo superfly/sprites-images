@@ -1,0 +1,149 @@
+name: Plan bake
+description: Determines which targets in a bake group changed.
+
+inputs:
+  group:
+    description: Bake group to build
+    required: true
+  test-group:
+    description: Bake group with tests to run against the build
+    default: test
+  base-sha:
+    description: Commit to detect changes against
+    default: "0000000000000000000000000000000000000000"
+  force-files:
+    description: Space-separated files that change every target when modified
+    default: ""
+  bake-files:
+    description: Space-separated bake files to build from
+    default: docker-bake.hcl docker-bake.json
+  dir:
+    description: Directory for the plan and build results
+    default: ${{ runner.temp }}/bake
+
+outputs:
+  dir:
+    description: Directory for the plan and build results
+    value: ${{ steps.plan.outputs.dir }}
+  targets:
+    description: Every target in the group
+    value: ${{ steps.plan.outputs.targets }}
+  changed:
+    description: Changed targets in the group
+    value: ${{ steps.plan.outputs.changed }}
+  tests:
+    description: Changed targets in the test group
+    value: ${{ steps.plan.outputs.tests }}
+  order:
+    description: Targets to build, dependencies first
+    value: ${{ steps.plan.outputs.order }}
+
+runs:
+  using: composite
+  steps:
+    - name: Plan bake
+      id: plan
+      shell: bash
+      env:
+        GROUP: ${{ inputs.group }}
+        TEST_GROUP: ${{ inputs.test-group }}
+        BASE_SHA: ${{ inputs.base-sha }}
+        FORCE_FILES: ${{ inputs.force-files }}
+        BAKE_FILES: ${{ inputs.bake-files }}
+        DIR: ${{ inputs.dir }}
+      run: |
+        mkdir -p "$DIR"
+        echo '{}' > "$DIR/contexts.json"
+        BUILDX_BAKE_FILE=
+        for file in $BAKE_FILES
+        do
+            BUILDX_BAKE_FILE=${BUILDX_BAKE_FILE:+$BUILDX_BAKE_FILE:}$file
+        done
+        export BUILDX_BAKE_FILE
+
+        # Printing several groups replaces .group.default with the requested
+        # names, so print each group alone before merging with $GROUP
+        {
+          test -z "$TEST_GROUP" || docker buildx bake --print "$TEST_GROUP"
+          docker buildx bake --print "$GROUP"
+        } | jq -s 'reduce .[] as $print ({}; . * $print)' > "$DIR/bake.json" || {
+          echo "::error::failed to read docker-bake.hcl" >&2
+          exit 1
+        }
+
+        members() {
+            test -n "$1" || return 0
+            jq -r --arg group "$1" '
+                .group as $groups
+                | def members($g):
+                    $groups[$g].targets[] | if $groups[.] then members(.) else . end;
+                  [members($group)] | unique | join(" ")
+            ' "$DIR/bake.json"
+        }
+
+        changed() {
+            test -n "$1" || return 0
+            scripts/changed-targets.sh "$1" < "$DIR/changes" | paste -sd ' ' -
+        }
+
+        TARGETS=$(members "$GROUP") || {
+          echo "::error::failed to read the $GROUP targets" >&2
+          exit 1
+        }
+        TEST_TARGETS=$(members "$TEST_GROUP") || {
+          echo "::error::failed to read the $TEST_GROUP targets" >&2
+          exit 1
+        }
+
+        CHANGED=$TARGETS
+        TESTS=$TEST_TARGETS
+        if test -n "${BASE_SHA//0/}"
+        then
+            git fetch --depth=1 origin "$BASE_SHA" || {
+              echo "::error::failed to fetch $BASE_SHA" >&2
+              exit 1
+            }
+            git diff --name-only "$BASE_SHA" HEAD > "$DIR/changes" || {
+              echo "::error::failed to diff against $BASE_SHA" >&2
+              exit 1
+            }
+            if git diff --quiet "$BASE_SHA" HEAD -- \
+                .github/actions/bake-plan .github/actions/bake-build \
+                scripts/changed-targets.sh $FORCE_FILES
+            then
+                CHANGED=$(changed "$GROUP") || {
+                  echo "::error::failed to determine changed targets" >&2
+                  exit 1
+                }
+                TESTS=$(changed "$TEST_GROUP") || {
+                  echo "::error::failed to determine changed tests" >&2
+                  exit 1
+                }
+            fi
+        fi
+
+        ORDER=$(
+            jq -r --arg changed "$CHANGED" --arg tests "$TESTS" '
+                . as $bake
+                | def deps($t):
+                    $bake.target[$t].contexts // {} | .[]
+                    | select(startswith("target:")) | ltrimstr("target:");
+                  def visit($t):
+                    if any(.[]; . == $t) then . else (reduce deps($t) as $d (.; visit($d))) + [$t] end;
+                ($changed | split(" ")) + [$tests | split(" ")[] | select(. != "") | deps(.)]
+                | reduce (.[] | select(. != "")) as $t ([]; visit($t))
+                | join(" ")
+            ' "$DIR/bake.json"
+        ) || {
+          echo "::error::failed to order targets" >&2
+          exit 1
+        }
+
+        echo "BUILDX_BAKE_FILE=$BUILDX_BAKE_FILE:$DIR/contexts.json" >> "$GITHUB_ENV"
+        {
+          echo "dir=$DIR"
+          echo "targets=$TARGETS"
+          echo "changed=$CHANGED"
+          echo "tests=$TESTS"
+          echo "order=$ORDER"
+        } >> "$GITHUB_OUTPUT"
