@@ -84,7 +84,7 @@ jobs:
           base-sha: ${{ steps.published.outputs.sha }}
           force-files: .github/workflows/build.yml
 
-      - name: Configure outputs
+      - name: Configure image attributes
         if: steps.plan.outputs.changed != ''
         env:
           BAKE_DIR: ${{ steps.plan.outputs.dir }}
@@ -103,22 +103,12 @@ jobs:
             exit 1
           }
 
-          jq --arg oci "$BAKE_DIR/oci" --slurpfile attrs "$BAKE_DIR/attrs.json" '
-              {target: (.target | keys | map({key: ., value: {
-                  output: ["type=oci,tar=false,dest=\($oci),\($attrs[0][.])"]
-              }}) | from_entries)}
-          ' "$BAKE_DIR/bake.json" > "$BAKE_DIR/outputs.json" || {
-            echo "::error::failed to configure outputs" >&2
-            exit 1
-          }
-
       - name: Build images
         if: steps.plan.outputs.changed != ''
         uses: $/.github/actions/bake-build
         with:
           dir: ${{ steps.plan.outputs.dir }}
           order: ${{ steps.plan.outputs.order }}
-          bake-files: ${{ steps.plan.outputs.dir }}/outputs.json
           cache-bucket: ${{ vars.CACHE_S3_BUCKET }}
           cache-access-key-id: ${{ secrets.CACHE_S3_ACCESS_KEY }}
           cache-secret-access-key: ${{ secrets.CACHE_S3_SECRET_ACCESS_KEY }}
@@ -155,18 +145,23 @@ jobs:
                 exit 1
               }
 
+              # TODO(jae-claude): annotations only change the manifest, so compare configs
               built=$(
-                  jq -r --arg t "$target" '.[$t]["containerimage.digest"]' \
+                  jq -r --arg t "$target" '.[$t]["containerimage.config.digest"]' \
                       "$BAKE_DIR/metadata.json"
               )
+              config=$(
+                  jq -r --arg t "$target" '.[$t]["containerimage.config.digest"]' \
+                      "$BAKE_DIR/publish-$target.json"
+              )
+              test "$built" = "$config" || {
+                echo "::error::pushed $image config $config differs from built $built" >&2
+                exit 1
+              }
               pushed=$(
                   jq -r --arg t "$target" '.[$t]["containerimage.digest"]' \
                       "$BAKE_DIR/publish-$target.json"
               )
-              test "$built" = "$pushed" || {
-                echo "::error::pushed $image $pushed differs from built $built" >&2
-                exit 1
-              }
               echo "Pushed $image@$pushed"
               echo "| \`$target\` | \`$pushed\` |" >> "$BAKE_DIR/published.md"
           done

@@ -64,28 +64,13 @@ jobs:
             exit 1
           }
 
-      - name: Configure outputs
-        if: steps.changes.outputs.changed != '' || steps.changes.outputs.tests != ''
-        env:
-          BAKE_DIR: ${{ steps.changes.outputs.dir }}
-        run: |
-          jq --arg oci "$BAKE_DIR/oci" '
-              {target: (.target | map_values({output: [
-                  "type=oci,tar=false,dest=\($oci),rewrite-timestamp=true",
-                  "type=tar,dest=-"
-              ]}))}
-          ' "$BAKE_DIR/bake.json" > "$BAKE_DIR/outputs.json" || {
-            echo "::error::failed to configure outputs" >&2
-            exit 1
-          }
-
       - name: Build images
         if: steps.changes.outputs.changed != '' || steps.changes.outputs.tests != ''
         uses: $/.github/actions/bake-build
         with:
           dir: ${{ steps.changes.outputs.dir }}
           order: ${{ steps.changes.outputs.order }}
-          bake-files: ${{ steps.changes.outputs.dir }}/outputs.json
+          outputs: type=tar,dest=-
           cache-bucket: ${{ vars.CACHE_S3_BUCKET }}
           cache-access-key-id: ${{ secrets.CACHE_S3_ACCESS_KEY }}
           cache-secret-access-key: ${{ secrets.CACHE_S3_SECRET_ACCESS_KEY }}
