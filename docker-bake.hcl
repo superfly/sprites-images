@@ -18,6 +18,22 @@ group "test" {
   ]
 }
 
+group "publish" {
+  targets = [
+    "sprites-classic-devtools",
+    "sprites-classic",
+    "sprites-classic-noshims",
+  ]
+}
+
+# These targets build reproducibly and are identified by their inputs.
+group "pure" {
+  targets = [
+    "ubuntu-base",
+    "sprites-classic-devtools",
+  ]
+}
+
 target "ubuntu-base" {
   context   = "./images/ubuntu-base"
   platforms = ["linux/amd64"]

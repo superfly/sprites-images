@@ -10,11 +10,6 @@ concurrency:
   group: test-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-env:
-  AWS_REGION: auto
-  AWS_ENDPOINT_URL_S3: https://t3.storage.dev
-  BUCKET: ${{ vars.CACHE_S3_BUCKET }}
-
 jobs:
   test:
     name: Build and test images
@@ -23,8 +18,8 @@ jobs:
     permissions:
       contents: read
     env:
-      BUILDER: test-${{ github.run_id }}-${{ github.run_attempt }}
-      CI_FILES: .github/workflows/test.yml scripts/changed-targets.sh
+      BUILDX_BUILDER: test-${{ github.run_id }}-${{ github.run_attempt }}
+      CI_FILES: .github/workflows/test.yml
 
     steps:
       - name: Checkout code
@@ -33,53 +28,18 @@ jobs:
       - name: Setup Docker
         run: |
           # The default backend doesn't support S3 caching
-          docker buildx create --name "$BUILDER" --driver docker-container --bootstrap || {
+          docker buildx create --name "$BUILDX_BUILDER" --driver docker-container --bootstrap || {
             echo "::error::failed to create buildx builder" >&2
             exit 1
           }
 
-      - name: Detect changes
+      - name: Plan build
         id: changes
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
-        run: |
-          docker buildx bake --print default > "$RUNNER_TEMP/bake.json" || {
-            echo "::error::failed to read docker-bake.hcl" >&2
-            exit 1
-          }
-          TARGETS=$(jq -r '.group.default.targets | join(" ")' "$RUNNER_TEMP/bake.json")
-          echo "targets=$TARGETS" >> "$GITHUB_OUTPUT"
-
-          git fetch --depth=1 origin "$BASE_SHA" || {
-            echo "::error::failed to fetch $BASE_SHA" >&2
-            exit 1
-          }
-          git diff --name-only "$BASE_SHA" HEAD > "$RUNNER_TEMP/changes" || {
-            echo "::error::failed to diff against $BASE_SHA" >&2
-            exit 1
-          }
-          if git diff --quiet "$BASE_SHA" HEAD -- $CI_FILES
-          then
-              CHANGED=$(scripts/changed-targets.sh default < "$RUNNER_TEMP/changes") || {
-              echo "::error::failed to determine changed targets" >&2
-                exit 1
-              }
-              CHANGED=$(printf '%s\n' "$CHANGED" | paste -sd ' ' -)
-              TESTS=$(scripts/changed-targets.sh test < "$RUNNER_TEMP/changes") || {
-                echo "::error::failed to determine changed tests" >&2
-                exit 1
-              }
-              TESTS=$(printf '%s\n' "$TESTS" | paste -sd ' ' -)
-          else
-              CHANGED=$TARGETS
-              docker buildx bake --print test > "$RUNNER_TEMP/bake-test.json" || {
-                echo "::error::failed to read docker-bake.hcl" >&2
-                exit 1
-              }
-              TESTS=$(jq -r '.group.test.targets | join(" ")' "$RUNNER_TEMP/bake-test.json")
-          fi
-          echo "changed=$CHANGED" >> "$GITHUB_OUTPUT"
-          echo "tests=$TESTS" >> "$GITHUB_OUTPUT"
+        uses: $/.github/actions/bake-plan
+        with:
+          group: default
+          base-sha: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
+          force-files: ${{ env.CI_FILES }}
 
       - name: Restore ccache
         if: contains(steps.changes.outputs.changed, 'sprites-classic-languages')
@@ -93,7 +53,7 @@ jobs:
         if: contains(steps.changes.outputs.changed, 'sprites-classic-languages')
         run: |
           mkdir -p "$RUNNER_TEMP/ccache"
-          docker buildx build --builder "$BUILDER" --output type=cacheonly \
+          docker buildx build --output type=cacheonly \
               -f - "$RUNNER_TEMP/ccache" << 'EOF' || {
           FROM busybox:1.38.0@sha256:fd7dc98638c8e305f4dc34e979f1c0fdfdcaeb0fbf8fcff77ae834b6da3d7e6e
           RUN --mount=type=cache,id=ccache,target=/var/cache/ccache \
@@ -104,84 +64,40 @@ jobs:
             exit 1
           }
 
-      - name: Build images
-        id: build
+      - name: Configure outputs
         if: steps.changes.outputs.changed != '' || steps.changes.outputs.tests != ''
         env:
-          BRANCH: ${{ github.head_ref || github.event.merge_group.base_ref || github.ref_name }}
-          CHANGED: ${{ steps.changes.outputs.changed }}
-          TESTS: ${{ steps.changes.outputs.tests }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.CACHE_S3_ACCESS_KEY }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.CACHE_S3_SECRET_ACCESS_KEY }}
+          BAKE_DIR: ${{ steps.changes.outputs.dir }}
         run: |
-          # Use a separate cache for each target. Read from both the current and
-          # main branch caches. Write the result back to the current branch.
-          jq --arg bucket "$BUCKET" --arg branch "${BRANCH#refs/heads/}" --arg oci "$RUNNER_TEMP/oci" '
-              def ref($name):
-                  "type=s3,region=\($ENV.AWS_REGION),endpoint_url=\($ENV.AWS_ENDPOINT_URL_S3),bucket=\($bucket),name=\($name)";
-              ($branch | gsub("[^A-Za-z0-9._/-]"; "-")) as $branch
-              | {target: (.target | keys | map({key: ., value: {
-                  output: ["type=oci,tar=false,dest=\($oci),rewrite-timestamp=true", "type=tar,dest=-"],
-                  "cache-from": [ref("\(.)-\($branch)"), ref("\(.)-main")],
-                  "cache-to": [ref("\(.)-\($branch)") + ",mode=max,ignore-error=true"]
-              }}) | from_entries)}
-          ' "$RUNNER_TEMP/bake.json" > "$RUNNER_TEMP/cache.json"
-
-          docker buildx bake --print default test > "$RUNNER_TEMP/bake-all.json" || {
-            echo "::error::failed to read docker-bake.hcl" >&2
+          jq --arg oci "$BAKE_DIR/oci" '
+              {target: (.target | map_values({output: [
+                  "type=oci,tar=false,dest=\($oci),rewrite-timestamp=true",
+                  "type=tar,dest=-"
+              ]}))}
+          ' "$BAKE_DIR/bake.json" > "$BAKE_DIR/outputs.json" || {
+            echo "::error::failed to configure outputs" >&2
             exit 1
           }
 
-          # When bake targets share steps through target: contexts, BuildKit
-          # doesn't reuse the cached results (moby/buildkit#6418,
-          # docker/buildx#414). To work around this, bake one target at a time
-          # and swap its target: contexts for unpacked oci-layout images.
-          # Somehow this is still faster.
-          ORDER=$(
-              jq -r --arg changed "$CHANGED" --arg tests "$TESTS" '
-                  . as $bake
-                  | def deps($t):
-                      $bake.target[$t].contexts // {} | .[]
-                      | select(startswith("target:")) | ltrimstr("target:");
-                    def visit($t):
-                      if any(.[]; . == $t) then . else (reduce deps($t) as $d (.; visit($d))) + [$t] end;
-                  ($changed | split(" ")) + [$tests | split(" ")[] | select(. != "") | deps(.)]
-                  | reduce (.[] | select(. != "")) as $t ([]; visit($t))
-                  | join(" ")
-              ' "$RUNNER_TEMP/bake-all.json"
-          ) || {
-            echo "::error::failed to order targets" >&2
-            exit 1
-          }
-
-          mkdir -p "$RUNNER_TEMP/oci" "$RUNNER_TEMP/metadata" "$RUNNER_TEMP/uncompressed"
-          echo '{}' > "$RUNNER_TEMP/contexts.json"
-          for target in $ORDER
-          do
-              docker buildx bake --builder "$BUILDER" --allow "fs=$RUNNER_TEMP/oci" \
-                  -f docker-bake.hcl -f docker-bake.json \
-                  -f "$RUNNER_TEMP/cache.json" -f "$RUNNER_TEMP/contexts.json" \
-                  --metadata-file "$RUNNER_TEMP/metadata/$target.json" \
-                  "$target" | wc -c > "$RUNNER_TEMP/uncompressed/$target" || {
-                echo "::error::failed to build $target" >&2
-                exit 1
-              }
-              jq -s add "$RUNNER_TEMP"/metadata/*.json > "$RUNNER_TEMP/metadata.json"
-
-              jq --slurpfile metadata "$RUNNER_TEMP/metadata.json" --arg oci "$RUNNER_TEMP/oci" '
-                  {target: (.target | map_values({contexts: (.contexts // {} | with_entries(
-                      (.value | ltrimstr("target:")) as $dep
-                      | select((.value | startswith("target:")) and $metadata[0][$dep] != null)
-                      | .value = "oci-layout://\($oci)@\($metadata[0][$dep]["containerimage.digest"])"
-                  ))}))}
-              ' "$RUNNER_TEMP/bake-all.json" > "$RUNNER_TEMP/contexts.json" || {
-                echo "::error::failed to resolve the $target contexts" >&2
-                exit 1
-              }
-          done
+      - name: Build images
+        if: steps.changes.outputs.changed != '' || steps.changes.outputs.tests != ''
+        uses: $/.github/actions/bake-build
+        with:
+          dir: ${{ steps.changes.outputs.dir }}
+          order: ${{ steps.changes.outputs.order }}
+          bake-files: ${{ steps.changes.outputs.dir }}/outputs.json
+          cache-bucket: ${{ vars.CACHE_S3_BUCKET }}
+          cache-access-key-id: ${{ secrets.CACHE_S3_ACCESS_KEY }}
+          cache-secret-access-key: ${{ secrets.CACHE_S3_SECRET_ACCESS_KEY }}
+          # Read from both the current and main branch caches. Write the result
+          # back to the current branch.
+          cache-from: ${{ github.head_ref || github.event.merge_group.base_ref || github.ref_name }} main
+          cache-to: ${{ github.head_ref || github.event.merge_group.base_ref || github.ref_name }}
 
       - name: Refresh ccache
         if: github.event_name == 'push' && contains(steps.changes.outputs.changed, 'sprites-classic-languages')
+        env:
+          BAKE_DIR: ${{ steps.changes.outputs.dir }}
         run: |
           # main's layers are already cached, so rerun the compiled stages to
           # fill the shared ccache. Force the rerun with CCACHE_REFRESH, since
@@ -195,9 +111,8 @@ jobs:
               }}) | from_entries)}
           ' > "$RUNNER_TEMP/ccache.json"
 
-          docker buildx bake --builder "$BUILDER" --allow "fs=$RUNNER_TEMP/oci" \
-              -f docker-bake.hcl -f docker-bake.json \
-              -f "$RUNNER_TEMP/contexts.json" -f "$RUNNER_TEMP/ccache.json" \
+          BUILDX_BAKE_FILE=$BUILDX_BAKE_FILE:$RUNNER_TEMP/ccache.json \
+              docker buildx bake --allow "fs=$BAKE_DIR/oci" \
               ccache-erlang ccache-ruby ccache-python || {
             echo "::error::failed to refresh ccache" >&2
             exit 1
@@ -208,7 +123,7 @@ jobs:
         run: |
           rm -rf "$RUNNER_TEMP/ccache"
           mkdir -p "$RUNNER_TEMP/empty"
-          docker buildx build --builder "$BUILDER" \
+          docker buildx build \
               --output "type=local,dest=$RUNNER_TEMP/ccache" \
               -f - "$RUNNER_TEMP/empty" << 'EOF' || {
           FROM busybox:1.38.0@sha256:fd7dc98638c8e305f4dc34e979f1c0fdfdcaeb0fbf8fcff77ae834b6da3d7e6e AS extract
@@ -233,6 +148,7 @@ jobs:
         id: sizes
         if: steps.changes.outputs.changed != ''
         env:
+          BAKE_DIR: ${{ steps.changes.outputs.dir }}
           TARGETS: ${{ steps.changes.outputs.changed }}
         run: |
           mkdir -p "$RUNNER_TEMP/sizes"
@@ -240,17 +156,17 @@ jobs:
           do
               ref=$(
                   jq -r --arg t "$target" '.[$t]["buildx.build.ref"] // empty' \
-                      "$RUNNER_TEMP/metadata.json"
+                      "$BAKE_DIR/metadata.json"
               )
               test -n "$ref" || continue
 
               manifest="$RUNNER_TEMP/manifest-$target.json"
-              docker buildx history inspect attachment --builder "$BUILDER" \
+              docker buildx history inspect attachment \
                   "${ref##*/}" --type manifest > "$manifest" || {
                 echo "::error::failed to read the $target manifest" >&2
                 exit 1
               }
-              jq --slurpfile uncompressed "$RUNNER_TEMP/uncompressed/$target" '{
+              jq --slurpfile uncompressed "$BAKE_DIR/stdout-bytes/$target" '{
                   layers: (.layers | length),
                   compressed: (.layers | map(.size) | add // 0),
                   uncompressed: $uncompressed[0]
@@ -263,10 +179,10 @@ jobs:
       - name: Run tests
         if: steps.changes.outputs.tests != ''
         env:
+          BAKE_DIR: ${{ steps.changes.outputs.dir }}
           TESTS: ${{ steps.changes.outputs.tests }}
         run: |
-          docker buildx bake --builder "$BUILDER" --allow "fs=$RUNNER_TEMP/oci" \
-              -f docker-bake.hcl -f docker-bake.json -f "$RUNNER_TEMP/contexts.json" \
+          docker buildx bake --allow "fs=$BAKE_DIR/oci" \
               $TESTS || {
             echo "::error::image tests failed" >&2
             exit 1
@@ -327,4 +243,15 @@ jobs:
 
       - name: Remove buildx builder
         if: always()
-        run: docker buildx rm --force "$BUILDER" || true
+        run: docker buildx rm --force "$BUILDX_BUILDER" || true
+
+  publish:
+    name: Publish images
+    needs: [test]
+    if: github.event_name == 'push'
+    permissions:
+      actions: read
+      contents: read
+      packages: write
+    uses: ./.github/workflows/build.yml
+    secrets: inherit
