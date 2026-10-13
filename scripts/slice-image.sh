@@ -20,8 +20,8 @@ put() {
 
 n=$(
     jq --slurpfile child "$(blob "$CHILD")" '
-        .layers as $parent
-        | if $child[0].layers[:($parent | length)] == $parent
+        .layers | map(.digest) as $parent
+        | if ($child[0].layers[:($parent | length)] | map(.digest)) == $parent
           then $parent | length
           else error("parent layers are not a prefix of the child layers")
           end
