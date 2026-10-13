@@ -7,7 +7,7 @@ ENV PATH="/home/sprite/.local/bin:$PATH"
 
 FROM sprites-classic-languages-node AS npm
 USER sprite
-ENV PATH="/home/sprite/.local/bin:$PATH"
+ENV PATH="/home/sprite/.local/bin:/.sprite/languages/node/nvm/versions/node/v24.18.0/bin:$PATH"
 
 # -- Antigravity
 
@@ -57,7 +57,6 @@ RUN --mount=type=cache,target=/tmp/npm,uid=1001,gid=1001 \
 set -e
 
 mkdir -p ~/.local/lib
-. /etc/profile.d/languages_env
 
 export NPM_CONFIG_CACHE=/tmp/npm
 export XDG_CACHE_HOME=/tmp/npm
@@ -87,9 +86,8 @@ FROM npm AS pi
 
 # Pi's installer requires npm.
 RUN --mount=type=cache,target=/tmp/npm,uid=1001,gid=1001 \
-    . /etc/profile.d/languages_env \
-        && NPM_CONFIG_CACHE=/tmp/npm \
-            bash -o pipefail -c 'curl -fsSL https://pi.dev/install.sh | sh'
+    NPM_CONFIG_CACHE=/tmp/npm \
+        bash -o pipefail -c 'curl -fsSL https://pi.dev/install.sh | sh'
 
 FROM base AS overlaps
 
