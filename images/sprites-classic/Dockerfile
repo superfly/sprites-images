@@ -26,6 +26,8 @@ ENV BROWSER="/.sprite/bin/sprite-browser" \
 
 WORKDIR /home/sprite
 
+USER sprite
+
 ENTRYPOINT ["/.sprite/entrypoint.sh"]
 
 CMD ["tail", "-f", "/dev/null"]
