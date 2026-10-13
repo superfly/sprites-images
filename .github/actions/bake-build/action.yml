@@ -1,7 +1,7 @@
 name: Build bake targets
 description: >-
   Builds planned bake targets one at a time, passing each dependency through the
-  OCI layout at <dir>/oci. The bake files must output each target there.
+  OCI layout at <dir>/oci.
 
   This avoids a bug in BuildKit where targets that share steps through target:
   contexts don't reuse cached middle layers (moby/buildkit#6418,
@@ -14,9 +14,9 @@ inputs:
   order:
     description: Targets to build from the bake-plan action
     required: true
-  bake-files:
-    description: Space-separated extra bake files with the outputs for each target
-    required: true
+  outputs:
+    description: Space-separated outputs for each target besides the OCI layout
+    default: ""
   cache-bucket:
     description: S3 bucket for the build cache. Builds without a cache when empty.
     default: ""
@@ -50,7 +50,7 @@ runs:
       env:
         DIR: ${{ inputs.dir }}
         ORDER: ${{ inputs.order }}
-        BAKE_FILES: ${{ inputs.bake-files }}
+        OUTPUTS: ${{ inputs.outputs }}
         CACHE_BUCKET: ${{ inputs.cache-bucket }}
         CACHE_ENDPOINT: ${{ inputs.cache-endpoint }}
         CACHE_REGION: ${{ inputs.cache-region }}
@@ -65,18 +65,17 @@ runs:
             echo "type=s3,region=$CACHE_REGION,endpoint_url=$CACHE_ENDPOINT,bucket=$CACHE_BUCKET,name=$1-$scope"
         }
 
-        for file in $BAKE_FILES
-        do
-            BUILDX_BAKE_FILE=$BUILDX_BAKE_FILE:$file
-        done
-
         mkdir -p "$DIR/oci" "$DIR/metadata" "$DIR/stdout-bytes"
         for target in $ORDER
         do
-            set --
+            set -- --set "$target.output=type=oci,tar=false,dest=$DIR/oci,rewrite-timestamp=true"
+            for output in $OUTPUTS
+            do
+                set -- "$@" --set "$target.output=$output"
+            done
             if test -n "$CACHE_BUCKET"
             then
-                for scope in $CACHE_FROM
+                for scope in $(printf '%s\n' $CACHE_FROM | sed 's|^refs/heads/||' | sort -u)
                 do
                     set -- "$@" --set "$target.cache-from=$(ref "$target" "$scope")"
                 done
