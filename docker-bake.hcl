@@ -5,9 +5,6 @@ group "default" {
     "sprites-classic-languages",
     "sprites-classic-agents",
     "sprites-classic",
-    "sprites-classic-languages-noshims",
-    "sprites-classic-agents-noshims",
-    "sprites-classic-noshims",
   ]
 }
 
@@ -22,7 +19,6 @@ group "publish" {
   targets = [
     "sprites-classic-devtools",
     "sprites-classic",
-    "sprites-classic-noshims",
   ]
 }
 
@@ -70,11 +66,6 @@ target "sprites-classic-languages" {
   }
 }
 
-target "sprites-classic-languages-noshims" {
-  inherits = ["sprites-classic-languages"]
-  target   = "languages-noshims"
-}
-
 # Node-only target for agent installers.
 target "sprites-classic-languages-node" {
   inherits = ["sprites-classic-languages"]
@@ -103,22 +94,14 @@ target "sprites-classic-agents" {
   }
 }
 
-target "sprites-classic-agents-noshims" {
-  inherits = ["sprites-classic-agents"]
-  contexts = {
-    sprites-classic-languages = "target:sprites-classic-languages-noshims"
-  }
-}
-
 target "sprites-classic-agents-test" {
   context    = "./images/sprites-classic/agents"
   dockerfile = "Dockerfile.test"
   platforms  = ["linux/amd64"]
   output     = ["type=cacheonly"]
   contexts = {
-    ubuntu-base                    = "target:ubuntu-base"
-    sprites-classic-agents         = "target:sprites-classic-agents"
-    sprites-classic-languages-node = "target:sprites-classic-languages-node"
+    ubuntu-base            = "target:ubuntu-base"
+    sprites-classic-agents = "target:sprites-classic-agents"
   }
 }
 
@@ -128,12 +111,5 @@ target "sprites-classic" {
   attest    = ["type=provenance,disabled=true"]
   contexts = {
     sprites-classic-agents = "target:sprites-classic-agents"
-  }
-}
-
-target "sprites-classic-noshims" {
-  inherits = ["sprites-classic"]
-  contexts = {
-    sprites-classic-agents = "target:sprites-classic-agents-noshims"
   }
 }
