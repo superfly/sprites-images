@@ -65,11 +65,6 @@ OPENSSL_ARCHS_DIR="$NVM_DIR/versions/node/v$NODE_VERSION/include/node/openssl/ar
 if [ -n "$OPENSSL_ARCH" ] && [ -d "$OPENSSL_ARCHS_DIR/$OPENSSL_ARCH" ]; then
     find "$OPENSSL_ARCHS_DIR" -mindepth 1 -maxdepth 1 ! -name "$OPENSSL_ARCH" -exec rm -rf {} +
 fi
-
-cat >> /etc/profile.d/languages_env << ENV
-export NVM_DIR="$NVM_DIR"
-export PATH="$NVM_DIR/versions/node/v$NODE_VERSION/bin:\$PATH"
-ENV
 EOF
 
 FROM base AS node-shims
@@ -148,11 +143,6 @@ echo "Building Erlang ${ERLANG_VERSION}..."
 "$KERL_BASE_DIR/kerl" delete build "$ERLANG_VERSION"
 
 ln -sfn "$KERL_DEFAULT_INSTALL_DIR/$ERLANG_VERSION" "$ERLANG_ROOT/current"
-
-cat >> /etc/profile.d/languages_env << 'ENV'
-export KERL_BASE_DIR="/.sprite/languages/erlang/kerl"
-export PATH="/.sprite/languages/erlang/current/bin:$PATH"
-ENV
 EOF
 
 FROM base AS erlang-shims
@@ -268,12 +258,6 @@ echo "Installing Hex package manager..."
 
 echo "Installing rebar3..."
 "$ELIXIR_ROOT/current/bin/mix" local.rebar --force
-
-cat >> /etc/profile.d/languages_env << 'ENV'
-export MIX_HOME="/.sprite/languages/elixir/.mix"
-export HEX_HOME="/.sprite/languages/elixir/.hex"
-export PATH="/.sprite/languages/elixir/current/bin:$PATH"
-ENV
 EOF
 
 FROM base AS elixir-shims
@@ -407,11 +391,6 @@ ln -sf "$GO_VERSION_DIR" "$GO_BASE_DIR/current"
 
 mkdir -p "$GO_BASE_DIR/workspace/src" "$GO_BASE_DIR/workspace/bin" \
     "$GO_BASE_DIR/workspace/pkg"
-
-cat >> /etc/profile.d/languages_env << 'ENV'
-export GOPATH="/.sprite/languages/go/workspace"
-export PATH="/.sprite/languages/go/current/bin:$PATH"
-ENV
 EOF
 
 FROM base AS go-shims
@@ -467,11 +446,6 @@ echo "Updating RubyGems..."
 "$RBENV_ROOT/shims/gem" uninstall -ax rubygems-update || true
 find "$RBENV_ROOT/versions" -path '*/gems/*/ext/*' -name '*.o' -delete
 rm -rf /tmp/ruby-build.*.log
-
-cat >> /etc/profile.d/languages_env << 'ENV'
-export RBENV_ROOT="/.sprite/languages/ruby/rbenv"
-export PATH="/.sprite/languages/ruby/rbenv/shims:/.sprite/languages/ruby/rbenv/bin:$PATH"
-ENV
 EOF
 
 FROM base AS ruby-shims
@@ -516,12 +490,6 @@ rustup default "$RUST_VERSION"
 rustup component add clippy rust-src rust-analysis rustfmt
 rustup self update -y >/dev/null 2>&1 || true
 rm -rf "$RUSTUP_HOME/tmp"
-
-cat >> /etc/profile.d/languages_env << 'ENV'
-export RUSTUP_HOME="/.sprite/languages/rust/rustup"
-export CARGO_HOME="/.sprite/languages/rust/cargo"
-export PATH="/.sprite/languages/rust/cargo/bin:$PATH"
-ENV
 EOF
 
 FROM base AS rust-shims
@@ -550,11 +518,6 @@ mkdir -p "$BUN_INSTALL" "/.sprite/bin"
 
 echo "Downloading and installing Bun..."
 curl -fsSL https://bun.sh/install | bash
-
-cat >> /etc/profile.d/languages_env << 'ENV'
-export BUN_INSTALL="/.sprite/languages/bun"
-export PATH="/.sprite/languages/bun/bin:$PATH"
-ENV
 EOF
 
 FROM base AS bun-shims
@@ -582,11 +545,6 @@ mkdir -p "$DENO_INSTALL" "/.sprite/bin"
 
 echo "Downloading and installing Deno..."
 curl -fsSL https://deno.land/install.sh | sh
-
-cat >> /etc/profile.d/languages_env << 'ENV'
-export DENO_INSTALL="/.sprite/languages/deno"
-export PATH="/.sprite/languages/deno/bin:$PATH"
-ENV
 EOF
 
 FROM base AS deno-shims
@@ -624,11 +582,6 @@ bash -lc "export SDKMAN_DIR='$SDKMAN_DIR'; \
   [ -s '$SDKMAN_DIR/bin/sdkman-init.sh' ] && source '$SDKMAN_DIR/bin/sdkman-init.sh'; \
   sdk install java '$JAVA_VERSION' <<< 'y'; \
   sdk default java '$JAVA_VERSION' || true"
-
-cat >> /etc/profile.d/languages_env << 'ENV'
-export SDKMAN_DIR="/.sprite/languages/java/sdkman"
-export PATH="/.sprite/languages/java/sdkman/candidates/java/current/bin:$PATH"
-ENV
 EOF
 
 FROM base AS java-shims
@@ -716,11 +669,6 @@ find "$PYENV_ROOT/versions/$PYTHON_VERSION/lib/python${PYTHON_VERSION%.*}/test" 
 for cmd in uv uvx; do
     ln -sf "$UV_BIN_DIR/$cmd" "/.sprite/bin/$cmd"
 done
-
-cat >> /etc/profile.d/languages_env << 'ENV'
-export PYENV_ROOT="/.sprite/languages/python/pyenv"
-export PATH="/.sprite/languages/python/pyenv/shims:/.sprite/languages/python/pyenv/bin:/.sprite/languages/uv/bin:$PATH"
-ENV
 EOF
 
 FROM base AS python-shims
@@ -738,7 +686,7 @@ pyenv = "$PYENV_ROOT/bin"
 PYENV_ROOT = "/.sprite/languages/python/pyenv"
 SPEC
 
-FROM base AS languages-common
+FROM base AS languages
 
 COPY --from=bun /.sprite/ /.sprite/
 COPY --from=deno /.sprite/ /.sprite/
@@ -795,30 +743,6 @@ if test -r /etc/profile.d/languages_paths
 end
 RC
 EOF
-
-FROM languages-common AS languages-noshims
-
-RUN --mount=type=bind,from=bun,source=/etc/profile.d/languages_env,target=/tmp/languages/bun \
-    --mount=type=bind,from=deno,source=/etc/profile.d/languages_env,target=/tmp/languages/deno \
-    --mount=type=bind,from=elixir,source=/etc/profile.d/languages_env,target=/tmp/languages/elixir \
-    --mount=type=bind,from=go,source=/etc/profile.d/languages_env,target=/tmp/languages/go \
-    --mount=type=bind,from=java,source=/etc/profile.d/languages_env,target=/tmp/languages/java \
-    --mount=type=bind,from=node,source=/etc/profile.d/languages_env,target=/tmp/languages/node \
-    --mount=type=bind,from=python,source=/etc/profile.d/languages_env,target=/tmp/languages/python \
-    --mount=type=bind,from=ruby,source=/etc/profile.d/languages_env,target=/tmp/languages/ruby \
-    --mount=type=bind,from=rust,source=/etc/profile.d/languages_env,target=/tmp/languages/rust \
-    << 'EOF'
-set -e
-
-for env in /tmp/languages/*
-do
-    grep -v '^export PATH=' "$env" >> /etc/profile.d/languages_env
-    sed -n 's/^export PATH="\(.*\):\$PATH"$/\1/p' "$env" | tr ':' '\n' \
-        >> /etc/profile.d/languages_paths
-done
-EOF
-
-FROM languages-common AS languages
 
 RUN --mount=type=bind,from=node-shims,source=/.sprite,target=/tmp/shims/node \
     --mount=type=bind,from=erlang-shims,source=/.sprite,target=/tmp/shims/erlang \
