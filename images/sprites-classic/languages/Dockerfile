@@ -42,6 +42,7 @@ NVM_VERSION="${NVM_VERSION:-v0.40.5}"
 # Pin the package-manager toolchain independently of the agent releases.
 NPM_VERSION="${NPM_VERSION:-12.0.2}"
 export NVM_DIR="/.sprite/languages/node/nvm"
+export NVM_SYMLINK_CURRENT=true
 
 mkdir -p "$NVM_DIR" "/.sprite/bin"
 
