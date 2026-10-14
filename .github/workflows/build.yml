@@ -30,7 +30,7 @@ jobs:
   build:
     name: Build and publish images
     runs-on:
-      group: sprite-env-amd64
+      group: sprites-images-amd64
     permissions:
       actions: read
       contents: read
