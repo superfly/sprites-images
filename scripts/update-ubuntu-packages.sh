@@ -1,9 +1,9 @@
 #!/usr/bin/env sh
 
-# Fetches the latest snapshot of the Ubuntu repositories and updates the
-# package list with the snapshot's versions.
+# Fetches the a snapshot (either the base image's or an override) of the
+# Ubuntu repositories and updates the package list.
 #
-# Usage: ./scripts/update-ubuntu-packages.sh
+# Usage: ./scripts/update-ubuntu-packages.sh [SNAPSHOT]
 
 PACKAGES_FILE=images/sprites-classic/devtools/packages.txt
 SHA256SUMS_FILE=images/sprites-classic/devtools/SHA256SUMS
@@ -29,7 +29,7 @@ fi
 # we don't know what time the build happens, so snapshot from the end of the
 # day. Ubuntu's releases take a few days to hit mirrors, so this is probably
 # safe.
-SNAPSHOT=${SERIAL}T235959Z
+SNAPSHOT="${1:-${SERIAL}T235959Z}"
 if test "$SNAPSHOT" \> "$(date -u +%Y%m%dT%H%M%SZ)"
 then
     echo "error: snapshot $SNAPSHOT is in the future" >&2
