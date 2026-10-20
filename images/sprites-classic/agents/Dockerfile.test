@@ -86,12 +86,9 @@ EOF
 
 FROM agents AS gemini
 
-RUN --mount=type=bind,from=sprites-classic-languages-node,source=/.sprite,target=/.sprite \
-    --mount=type=bind,from=sprites-classic-languages-node,source=/etc/profile.d/languages_env,target=/etc/profile.d/languages_env \
-    << 'EOF'
+RUN << 'EOF'
 set -e
 
-. /etc/profile.d/languages_env
 gemini --version < /dev/null
 
 echo "1" > /tmp/status
@@ -125,12 +122,9 @@ EOF
 
 FROM agents AS pi
 
-RUN --mount=type=bind,from=sprites-classic-languages-node,source=/.sprite,target=/.sprite \
-    --mount=type=bind,from=sprites-classic-languages-node,source=/etc/profile.d/languages_env,target=/etc/profile.d/languages_env \
-    << 'EOF'
+RUN << 'EOF'
 set -e
 
-. /etc/profile.d/languages_env
 pi --version < /dev/null
 
 echo "1" > /tmp/status

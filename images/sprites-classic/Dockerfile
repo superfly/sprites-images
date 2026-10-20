@@ -4,9 +4,6 @@ FROM sprites-classic-agents
 
 COPY --chmod=u=rwX,go=rX .sprite/ /.sprite/
 
-RUN touch /etc/profile.d/languages_paths /etc/profile.d/languages_env \
-    && chown 1001:1001 /etc/profile.d/languages_paths /etc/profile.d/languages_env
-
 RUN << 'EOF'
 set -e
 
