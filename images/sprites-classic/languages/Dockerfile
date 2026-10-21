@@ -36,8 +36,8 @@ RUN --mount=type=cache,target=/root/.npm \
     << 'EOF'
 set -e
 
-# Baseline pinned LTS as of 2026-07-08: 24.18.0
-NODE_VERSION="${NODE_VERSION:-24.18.0}"
+# Baseline pinned LTS as of 2026-10-21: 24.22.1
+NODE_VERSION="${NODE_VERSION:-24.22.1}"
 NVM_VERSION="${NVM_VERSION:-v0.40.5}"
 # Pin the package-manager toolchain independently of the agent releases.
 NPM_VERSION="${NPM_VERSION:-12.0.2}"

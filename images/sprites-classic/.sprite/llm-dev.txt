@@ -13,7 +13,7 @@ Node.js
 - Manager: nvm at /.sprite/languages/node/nvm
 - Shims: node, npm, npx, corepack
 - Manage versions: nvm install <version>; nvm use <version>; nvm alias default <version>
-- Default installed: 24.18.0
+- Default installed: 24.22.1
 
 Python
 - Manager: pyenv at /.sprite/languages/python/pyenv
