@@ -9,7 +9,7 @@ Installation Location:
 - Binaries: /.sprite/bin (symlinked)
 - Workspace: /.sprite/languages/go/workspace (GOPATH)
 
-Default Version: 1.25.1
+Default Version: 1.27.3
 
 Using Go:
 ---------

@@ -8,7 +8,7 @@ Languages:
 - Deno latest
 - Elixir 1.18.4
 - Erlang 28.1 (kerl)
-- Go 1.25.1
+- Go 1.27.3
 - Java 25, Temurin (SDKMAN)
 - Node.js 24.22.1 (nvm)
 - Python 3.13.7 (pyenv)
