@@ -32,7 +32,7 @@ Rust
 - Manager: rustup at /.sprite/languages/rust/rustup; cargo at /.sprite/languages/rust/cargo
 - Shims: rustc, cargo, rustup, rustfmt, rustdoc
 - Manage versions: rustup toolchain install <version|stable|nightly>; rustup toolchain list; rustup default <version>; rustup override set <version>
-- Default installed: 1.90.0
+- Default installed: 1.99.1
 
 Go
 - Manager: versions directory at /.sprite/languages/go/versions with current symlink at /.sprite/languages/go/current

@@ -471,8 +471,8 @@ RUN --mount=type=cache,target=/.sprite/languages/rust/rustup/downloads \
     << 'EOF'
 set -e
 
-# Baseline pinned version as of 2025-10-04: 1.90.0
-RUST_VERSION="${RUST_VERSION:-1.90.0}"
+# Baseline pinned version as of 2026-10-21: 1.99.1
+RUST_VERSION="${RUST_VERSION:-1.99.1}"
 export RUSTUP_HOME="/.sprite/languages/rust/rustup"
 export CARGO_HOME="/.sprite/languages/rust/cargo"
 export PATH="$CARGO_HOME/bin:$PATH"
