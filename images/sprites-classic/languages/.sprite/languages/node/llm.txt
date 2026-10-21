@@ -8,7 +8,7 @@ Installation Location:
 - Binaries: /.sprite/bin (symlinked from active version)
 - npm cache: /.sprite/languages/node/.npm-cache
 
-Default Version: 24.18.0
+Default Version: 24.22.1
 
 Using Node.js:
 --------------

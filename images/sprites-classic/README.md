@@ -10,7 +10,7 @@ Languages:
 - Erlang 28.1 (kerl)
 - Go 1.25.1
 - Java 25, Temurin (SDKMAN)
-- Node.js 24.18.0 (nvm)
+- Node.js 24.22.1 (nvm)
 - Python 3.13.7 (pyenv)
 - Ruby 3.4.6 (rbenv)
 - Rust 1.90.0 (rustup)
