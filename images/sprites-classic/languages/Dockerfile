@@ -417,8 +417,8 @@ set -e
 
 export RUBY_BUILD_BUILD_PATH=/tmp/ruby-build
 
-# Baseline pinned version as of 2025-10-04: 3.4.6
-RUBY_VERSION="${RUBY_VERSION:-3.4.6}"
+# Baseline pinned version as of 2026-10-21: 3.4.11
+RUBY_VERSION="${RUBY_VERSION:-3.4.11}"
 export RBENV_ROOT="/.sprite/languages/ruby/rbenv"
 export PATH="$RBENV_ROOT/bin:$PATH"
 

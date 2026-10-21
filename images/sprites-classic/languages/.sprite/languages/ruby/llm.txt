@@ -8,7 +8,7 @@ Installation Location:
 - Binaries: /.sprite/bin (shim wrappers)
 - Gems: Within each Ruby version
 
-Default Version: 3.4.6
+Default Version: 3.4.11
 
 Using Ruby:
 -----------
