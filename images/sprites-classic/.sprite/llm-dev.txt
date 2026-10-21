@@ -20,7 +20,7 @@ Python
 - Shims: python, python3, pip, pip3, pipenv, poetry, virtualenv, pyenv, uv, uvx
 - uv and uvx are installed independently and remain available across pyenv versions
 - Manage versions: pyenv install <version>; pyenv versions; pyenv global <version>; pyenv local <version>
-- Default installed: 3.13.7
+- Default installed: 3.13.17
 
 Ruby
 - Manager: rbenv at /.sprite/languages/ruby/rbenv

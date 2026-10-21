@@ -630,8 +630,8 @@ set -e
 
 export PYTHON_BUILD_BUILD_PATH=/tmp/python-build
 
-# Baseline pinned version as of 2025-10-04: 3.13.7
-PYTHON_VERSION="${PYTHON_VERSION:-3.13.7}"
+# Baseline pinned version as of 2026-10-21: 3.13.17
+PYTHON_VERSION="${PYTHON_VERSION:-3.13.17}"
 export PYENV_ROOT="/.sprite/languages/python/pyenv"
 export PATH="$PYENV_ROOT/bin:$PATH"
 UV_BIN_DIR="/.sprite/languages/uv/bin"
