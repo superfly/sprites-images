@@ -38,7 +38,7 @@ Go
 - Manager: versions directory at /.sprite/languages/go/versions with current symlink at /.sprite/languages/go/current
 - Shims: go, gofmt
 - Manage versions: go-version install <version>; go-version list; go-version use <version>; go-version current
-- Default installed: 1.25.1
+- Default installed: 1.27.3
 
 Erlang
 - Manager: kerl at /.sprite/languages/erlang/kerl; installs in /.sprite/languages/erlang/kerl/installs; current symlink at /.sprite/languages/erlang/current

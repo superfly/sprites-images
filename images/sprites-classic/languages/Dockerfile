@@ -374,8 +374,8 @@ ARG TARGETARCH
 RUN << 'EOF'
 set -e
 
-# Baseline pinned version as of 2025-10-04: 1.25.1
-GO_VERSION="${GO_VERSION:-1.25.1}"
+# Baseline pinned version as of 2026-10-21: 1.27.3
+GO_VERSION="${GO_VERSION:-1.27.3}"
 GO_BASE_DIR="/.sprite/languages/go"
 GO_VERSION_DIR="$GO_BASE_DIR/versions/$GO_VERSION"
 
