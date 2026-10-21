@@ -8,7 +8,7 @@ Installation Location:
 - Binaries: /.sprite/bin (shim wrappers)
 - Packages: Within each Python version's site-packages
 
-Default Version: 3.13.7
+Default Version: 3.13.17
 
 Using Python:
 -------------
