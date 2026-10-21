@@ -13,7 +13,7 @@ Languages:
 - Node.js 24.22.1 (nvm)
 - Python 3.13.7 (pyenv)
 - Ruby 3.4.11 (rbenv)
-- Rust 1.90.0 (rustup)
+- Rust 1.99.1 (rustup)
 
 Agents:
 

@@ -8,7 +8,7 @@ Installation Location:
 - cargo: /.sprite/languages/rust/cargo
 - Binaries: /.sprite/bin (shim wrappers)
 
-Default Version: 1.90.0
+Default Version: 1.99.1
 
 Using Rust:
 -----------
