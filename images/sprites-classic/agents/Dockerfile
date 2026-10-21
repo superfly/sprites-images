@@ -7,7 +7,7 @@ ENV PATH="/home/sprite/.local/bin:$PATH"
 
 FROM sprites-classic-languages-node AS npm
 USER sprite
-ENV PATH="/home/sprite/.local/bin:/.sprite/languages/node/nvm/versions/node/v24.22.1/bin:$PATH"
+ENV PATH="/home/sprite/.local/bin:/.sprite/languages/node/nvm/current/bin:$PATH"
 
 # -- Antigravity
 
