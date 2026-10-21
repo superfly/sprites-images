@@ -6,8 +6,8 @@ Languages:
 
 - Bun latest
 - Deno latest
-- Elixir 1.18.4
-- Erlang 28.1 (kerl)
+- Elixir 1.20.4 and 1.19.5
+- Erlang 28.5 (kerl)
 - Go 1.27.3
 - Java 25, Temurin (SDKMAN)
 - Node.js 24.22.1 (nvm)

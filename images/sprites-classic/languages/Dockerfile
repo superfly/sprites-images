@@ -209,8 +209,8 @@ set -e
 
 # Install multiple versions; the first is the default
 # Baseline pinned versions as of 2025-12-22
-ELIXIR_VERSIONS="${ELIXIR_VERSIONS:-1.19.2 1.18.4}"
-ELIXIR_DEFAULT_VERSION="${ELIXIR_DEFAULT_VERSION:-1.19.2}"
+ELIXIR_VERSIONS="${ELIXIR_VERSIONS:-1.20.4 1.19.5}"
+ELIXIR_DEFAULT_VERSION="${ELIXIR_DEFAULT_VERSION:-1.20.4}"
 ELIXIR_ROOT="/.sprite/languages/elixir"
 VERSIONS_DIR="$ELIXIR_ROOT/versions"
 export MIX_HOME="$ELIXIR_ROOT/.mix"

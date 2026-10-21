@@ -10,7 +10,7 @@ Installation Location:
 - Mix home: /.sprite/languages/elixir/.mix
 - Hex home: /.sprite/languages/elixir/.hex
 
-Default Version: 1.19.2 (OTP 28)
+Default Version: 1.20.4 (OTP 28)
 
 Prerequisites:
 --------------
@@ -30,7 +30,7 @@ Managing Versions:
 ------------------
 Project-specific versions via .tool-versions (recommended):
   Create a .tool-versions file in your project root:
-    elixir 1.18.4
+    elixir 1.19.5
 
   The shim automatically detects this file and uses the specified version.
   If the version isn't installed, you'll get an error with instructions.

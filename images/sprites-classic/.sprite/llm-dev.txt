@@ -44,13 +44,13 @@ Erlang
 - Manager: kerl at /.sprite/languages/erlang/kerl; installs in /.sprite/languages/erlang/kerl/installs; current symlink at /.sprite/languages/erlang/current
 - Shims: erl, erlc, escript, dialyzer, rebar3, kerl
 - Manage versions: kerl-helper install <version>; kerl-helper list; kerl-helper activate <version>; kerl-helper update; or use kerl directly
-- Default installed: 28.1
+- Default installed: 28.5
 
 Elixir
 - Manager: versions directory at /.sprite/languages/elixir/versions with current symlink at /.sprite/languages/elixir/current
 - Shims: elixir, elixirc, iex, mix
 - Manage versions: elixir-version install <version>; elixir-version list; elixir-version use <version>; elixir-version current
-- Default installed: 1.18.4 (OTP 28)
+- Default installed: 1.20.4 (OTP 28)
 
 Java
 - Manager: SDKMAN at /.sprite/languages/java/sdkman
