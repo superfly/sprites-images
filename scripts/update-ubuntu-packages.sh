@@ -29,7 +29,7 @@ fi
 # we don't know what time the build happens, so snapshot from the end of the
 # day. Ubuntu's releases take a few days to hit mirrors, so this is probably
 # safe.
-SNAPSHOT="${1:-${SERIAL}T235959Z}"
+SNAPSHOT="${1:-${SERIAL%%.*}T235959Z}"
 if test "$SNAPSHOT" \> "$(date -u +%Y%m%dT%H%M%SZ)"
 then
     echo "error: snapshot $SNAPSHOT is in the future" >&2
