@@ -21,6 +21,12 @@ nvm list
 # Test Node.js
 /.sprite/bin/node -e "console.log('Hello from Node.js ' + process.version + '!')"
 
+# Regression test for infinite recursion when /.sprite/bin was ahead of nvm in
+# PATH and under npm exec's PREFIX
+NODE_BIN_DIR="$(dirname "$(nvm which default)")"
+PATH="/.sprite/bin:$NODE_BIN_DIR:$PATH" timeout 5 /.sprite/bin/npm --version
+PATH="/.sprite/bin:$NODE_BIN_DIR:$PATH" PREFIX="${NODE_BIN_DIR%/bin}" timeout 5 /.sprite/bin/node --version
+
 echo "1" > /status
 EOF
 
