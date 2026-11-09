@@ -83,10 +83,15 @@ NVM_DIR = "/.sprite/languages/node/nvm"
 [resolve]
 shim = '''
 [ -s "$NVM_DIR/nvm.sh" ] || export NVM_DIR="/.sprite/languages/node/nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-nvm use default >/dev/null 2>&1 || true
+[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" --no-use
 NODE_BIN="$(nvm which default 2>/dev/null || nvm which current 2>/dev/null || command -v node)"
 NODE_BIN_DIR="$(dirname "$NODE_BIN")"
+case "$NODE_BIN_DIR" in
+  "$NVM_DIR"/*)
+    export NVM_BIN="$NODE_BIN_DIR"
+    export NVM_INC="${NODE_BIN_DIR%/bin}/include/node"
+    ;;
+esac
 '''
 bash = '''
 local NODE_BIN_DIR=""
