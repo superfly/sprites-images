@@ -15,43 +15,42 @@ task names a third-party service, when an external API answers 401 or 403,
 or when egress denies a host:
 
 ```bash
-sprite-env connectors find <service or host>
+sprite-env connectors find github
+sprite-env connectors find "web search"
 ```
 
-Pass a name, a keyword, a host, or a full URL, for example `github`,
-`web search`, or `https://api.github.com/repos/acme/web/issues`. A host or
-URL is matched against each connector's `upstream_host` (an exact host beats
-a parent or child host); a name is matched against `provider`,
-`display_name`, `keywords`, `categories`, and `description`. It prints one
-JSON object:
-
-```json
-{"query": "...", "match": "connected|restricted|available|none",
- "connector": {...} or null, "candidates": [...up to 5 runners-up...],
- "next_step": "one sentence to act on or relay"}
-```
+Pass a name, a keyword, a host, or a full URL such as
+`https://api.github.com/repos/acme/web/issues`. Host and URL searches use
+`upstream_host` and prefer an exact host over a parent or child host. Name
+searches use `provider`, `display_name`, `keywords`, `categories`, and
+`description`. The JSON result includes the `query`, the `match` (one of
+the four outcomes below), a `connector` or `null`, up to five other
+matches in `candidates`, and a `next_step`.
 
 ## Step 2: Act on the match
 
-- **`connected`**: this sprite may call it. Use the connector's
-  `gateway_base_url` as the base URL and append the provider's API path, for
-  example `curl -s <gateway_base_url>/user/repos`. The `usage_snippet` is a
-  ready example. Do not add an Authorization header, API key, or token: the
-  gateway attaches the credential, and a header you add can override it.
-- **`restricted`**: the connection exists but this sprite's access policy
-  denies it. Tell the user why, quoting `access_reason`, give them the
-  connector's `manage_url`, and wait. Once they allow this sprite, call it
-  without restarting anything. Never try to work around the policy.
-- **`available`**: the provider is supported but nobody in the organization
-  has connected it. Relay the setup link or dashboard instructions in
-  `next_step` (the `setup_url` pre-selects the provider and this sprite in
-  the dashboard; without one, `next_step` gives the dashboard path), explain
-  that the credential stays off the sprite, and run `find` again once the
-  user says setup is done.
-- **`none`**: nothing matches. Follow `next_step`. If it suggests a Custom
-  API connector, give the user the API's base URL and the name of the auth
-  header so they can create it in the dashboard. Do not ask them to paste
-  the credential into the sprite instead.
+- **`connected`** means this sprite may call the connector. Use its
+  `gateway_base_url` as the base URL and append the provider's API path.
+  Use `usage_snippet` as a starting point when provided. Do not add an
+  Authorization header, API key, or token. The gateway attaches the
+  credential, and a header you add can override it.
+- **`restricted`** means the connector's access policy denies this sprite.
+  Tell the user why, quoting `access_reason`, give them the
+  connector's `manage_url`, and wait. Once they allow this sprite, run
+  `find` again to get the callable `gateway_base_url`. No restart is
+  needed. Never try to work around the policy.
+- **`available`** means the dashboard offers setup for this provider.
+  Check `candidates` for a relevant `connected` or `restricted` match and
+  follow its steps if one fits. If `connectors list` omits `restricted`,
+  ask the user to check the dashboard for an existing connector before
+  creating one. If setup is needed, relay the setup link or dashboard
+  instructions from `next_step`. Ask the user
+  to allow this sprite in the connector's access policy, then run `find`
+  again after they confirm access. The credential stays off the sprite.
+- **`none`** means nothing matches. Follow `next_step`. If it suggests a
+  Custom API connector, give the user the API's base URL and the name of the
+  auth header so they can create it in the dashboard. Do not ask them to
+  paste the credential into the sprite instead.
 
 `sprite-env connectors get <connector_id>` shows one connector by id, with the
 same `match` and `next_step`.
@@ -74,34 +73,39 @@ It has three buckets:
 - `restricted`: connectors whose access policy denies this sprite. Each has
   `id`, `provider`, `display_name`, `access_reason` (why this sprite is
   denied), `manage_url` (where a person changes that), `upstream_host`,
-  `categories`, and `keywords`. Older platforms omit this bucket; treat a
-  missing key as empty.
-- `available`: providers nobody has connected. Each has `provider`,
-  `display_name`, `description`, `setup_url` (the dashboard page to create
-  the connection, pre-selecting the provider and this sprite), `auth_kind`,
-  `setup`, `website_url`, `upstream_host`, `categories`, and `keywords`.
+  `categories`, and `keywords`. Older platforms omit this bucket and
+  leave denied connections out of the response.
+- `available`: providers eligible for setup, including providers with
+  existing connections. Each has `provider`, `display_name`,
+  `description`, `setup_url` (the dashboard page with the provider selected),
+  `auth_kind`, `setup`, `website_url`, `upstream_host`, `categories`, and
+  `keywords`. Older platforms may omit the setup link and discovery metadata.
 
 Match on `provider`, `display_name`, `upstream_host`, `keywords`, or
 `description`; `find` does this for you.
 
 ## Missing scopes
 
-If a connected provider rejects an operation for lack of permission, check
-the connection's `scopes`, name the scopes the operation needs and why, and
-send the user to its `request_scopes_url` to grant them. Then retry.
+If an OAuth provider reports missing scopes, check the connection's
+`scopes` and explain which additional scopes the operation needs. Append
+the URL-encoded, comma-separated list of existing and required scopes to
+`request_scopes_url`, which ends in `?scopes=`. Give the user the completed
+link and retry after they grant the scopes.
 
 ## Reading gateway errors
 
-- **403** from the gateway means policy: this sprite is not allowed to use
-  that connection. Treat it like `restricted`: report it, give the user the
-  `manage_url`, and wait. Do not retry with a different identity, header, or
-  route.
-- **401** from the gateway means the caller is not recognized as a sprite.
-  The request did not come from this sprite's own network identity, for
-  example because it went through a tunnel or another host. Make the call
-  from this sprite directly.
-- A 4xx or 5xx with the upstream provider's own error body came from the
-  provider; read it as you would any API error.
+Read the error body alongside the HTTP status.
+
+- If the gateway says it could not verify the sprite's identity, make the
+  request from this sprite directly, without a tunnel or another host.
+- If the gateway gives a reason this sprite is denied by the connector's
+  access policy, follow the `restricted` steps and wait. Do not retry with
+  a different identity, header, or route.
+- If the gateway reports a rejected saved credential, ask the user to
+  reconnect it from the dashboard. If it reports an unsupported request
+  path or method, check the connector's supported operations.
+- If the response contains an upstream provider error, follow the provider's
+  error details. For missing OAuth scopes, use the steps above.
 
 ## Rules
 
@@ -110,8 +114,8 @@ send the user to its `request_scopes_url` to grant them. Then retry.
 - **Never ask the user to paste a token, key, or credential** into the sprite,
   a file, or a service's environment. Send them to `setup_url` or
   `manage_url` instead; the credential stays in the dashboard.
-- **Never weaken or work around an access policy.** A `restricted` match or a
-  403 is a decision a person makes in the dashboard.
+- **Never weaken or work around an access policy.** Only a person can grant
+  the sprite access in the dashboard.
 - **Always run `find` or read the list first**; never guess a gateway URL.
   The `gateway_base_url` differs per connection.
 - **This is the only supported way to call external APIs** from a Sprite.
