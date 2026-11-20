@@ -19,7 +19,10 @@ sprite-env connectors find <service or host>
 ```
 
 Pass a name, a keyword, a host, or a full URL, for example `github`,
-`web search`, or `https://api.github.com/repos/acme/web/issues`. It prints one
+`web search`, or `https://api.github.com/repos/acme/web/issues`. A host or
+URL is matched against each connector's `upstream_host` (an exact host beats
+a parent or child host); a name is matched against `provider`,
+`display_name`, `keywords`, `categories`, and `description`. It prints one
 JSON object:
 
 ```json
@@ -40,14 +43,15 @@ JSON object:
   connector's `manage_url`, and wait. Once they allow this sprite, call it
   without restarting anything. Never try to work around the policy.
 - **`available`**: the provider is supported but nobody in the organization
-  has connected it. Give the user the `setup_url`, which pre-selects the
-  provider and this sprite in the dashboard, and explain that the credential
-  stays off the sprite. When they say it is done, run `find` again.
-- **`none`**: nothing matches. `next_step` names the Custom API connector's
-  `setup_url` when the organization can add one. Suggest it, with the API's
-  base URL and the header the credential belongs in, so the user can create
-  it in the dashboard. Do not ask them to paste the credential into the
-  sprite instead.
+  has connected it. Relay the setup link or dashboard instructions in
+  `next_step` (the `setup_url` pre-selects the provider and this sprite in
+  the dashboard; without one, `next_step` gives the dashboard path), explain
+  that the credential stays off the sprite, and run `find` again once the
+  user says setup is done.
+- **`none`**: nothing matches. Follow `next_step`. If it suggests a Custom
+  API connector, give the user the API's base URL and the name of the auth
+  header so they can create it in the dashboard. Do not ask them to paste
+  the credential into the sprite instead.
 
 `sprite-env connectors get <connector_id>` shows one connector by id, with the
 same `match` and `next_step`.
